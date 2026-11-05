@@ -68,31 +68,15 @@
                 scroll-snap-type:x mandatory; -webkit-overflow-scrolling:touch; }
   .panel { flex:0 0 100%; width:100%; height:100%; min-height:0; overflow-y:auto; scroll-snap-align:start;
            padding:12px; -webkit-overflow-scrolling:touch; }
-  .hoja { background:#fff; box-shadow:0 2px 8px rgba(0,0,0,.12); padding:14px; max-width:700px; margin:0 auto; }
+  .visor { max-width:700px; margin:0 auto; }
+  .visor canvas { display:block; width:100%; height:auto; background:#fff; margin-bottom:10px;
+                  box-shadow:0 2px 8px rgba(0,0,0,.12); }
   .puntos { flex-shrink:0; text-align:center; padding:6px 0 0; }
   .pt { display:inline-block; width:9px; height:9px; border-radius:50%; background:#bbb; margin:0 4px; }
   .pt.on { background:var(--azul); }
   .hint { flex-shrink:0; text-align:center; font-size:14px; color:#555; margin:2px 0 6px; }
   .acciones { flex-shrink:0; display:flex; flex-direction:column; gap:10px; padding:12px 16px;
               padding-bottom:max(12px, env(safe-area-inset-bottom)); background:#fff; align-items:center; }
-  #canvasOriginal { width:100%; height:auto; display:block; background:#fff; }
-
-  /* ── Hoja del remito (replica el orden pedido) ── */
-  .cab { display:flex; justify-content:space-between; gap:10px; align-items:flex-start; }
-  .cab-izq img { width:110px; display:block; margin-bottom:4px; }
-  .cab-izq .empresa { font-weight:700; font-size:15px; }
-  .cab-izq div { font-size:13px; line-height:1.5; }
-  .cab-der { text-align:right; font-size:13px; line-height:1.7; }
-  .cab-der .tipo { font-weight:700; font-size:16px; }
-  .cuadro { border:1px solid #333; padding:8px 10px; font-size:13px; margin:12px 0; }
-  .cuadro div { line-height:1.7; }
-  table { width:100%; border-collapse:collapse; font-size:13px; }
-  th, td { border:1px solid #333; padding:4px 5px; }
-  th { background:#eee; }
-  .n { text-align:right; }
-  .c { text-align:center; }
-  .tot td { font-weight:600; border:none; padding:3px 5px; }
-  .pie { font-size:12px; margin-top:12px; }
 </style>
 </head>
 <body>
@@ -108,23 +92,16 @@
   </div>
 </section>
 
-<!-- PANTALLA 2: confirmar datos -->
+<!-- PANTALLA 2: confirmar cliente y descuento -->
 <section id="s2" class="pantalla">
   <h2>Confirmar datos</h2>
   <div class="tarjeta">
     <div>Remito: <b id="nroRemito"></b></div>
-    <div>CUIT: <b id="cuitTxt"></b></div>
     <div>Productos: <b id="cantProd"></b></div>
     <div>Descuento del PDF: <b id="descTxt"></b></div>
   </div>
   <label class="campo">Cliente (podés cambiarlo)
     <input id="cliente" type="text" autocomplete="off">
-  </label>
-  <label class="campo">Domicilio (opcional)
-    <input id="domicilio" type="text" autocomplete="off">
-  </label>
-  <label class="campo">Localidad (opcional)
-    <input id="localidad" type="text" autocomplete="off">
   </label>
   <div id="bloqueDesc" class="tarjeta" hidden>
     <div class="aviso">No se encontró el descuento en el PDF. Elegí el porcentaje:</div>
@@ -145,12 +122,12 @@
   </div>
 </section>
 
-<!-- PANTALLA 3: remito generado + original deslizable -->
+<!-- PANTALLA 3: remito generado (PDF) + original deslizable -->
 <section id="s3" class="pantalla">
   <div class="barra" id="tituloS3">Remito</div>
   <div class="deslizador" id="deslizador">
-    <div class="panel"><div class="hoja" id="hoja"></div></div>
-    <div class="panel"><canvas id="canvasOriginal"></canvas></div>
+    <div class="panel"><div class="visor" id="visorRemito"></div></div>
+    <div class="panel"><div class="visor" id="visorOriginal"></div></div>
   </div>
   <div class="puntos"><span class="pt on" id="pt1"></span><span class="pt" id="pt2"></span></div>
   <div class="hint">← Deslizá para ver el original →</div>
@@ -163,10 +140,8 @@
 <script>
 const GANANCIA = 0.135;
 const EMPRESA = "DISTRIBUIDORA JPA";
-const CONDICION = "Contado";
 const TIPO = "Comprobante";
-const JPA_DOMICILIO = "";   // completar con el domicilio de JPA (si está vacío no se imprime)
-const JPA_CUIT = "";        // completar con el CUIT de JPA
+const CONDICION = "Contado";
 const $ = id => document.getElementById(id);
 
 pdfjsLib.GlobalWorkerOptions.workerSrc =
@@ -189,8 +164,8 @@ function mostrar(id) {
 }
 const esc = s => String(s).replace(/[&<>"']/g, c =>
   ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
-const fmtMoneda = n =>
-  n.toLocaleString("es-AR", {style:"currency", currency:"ARS"}).replace(/\u00a0/g, " ");
+// Formato del ejemplo: $ 2,643.22
+const fmtMoneda = n => "$ " + n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const hoy = () => new Date().toLocaleDateString("es-AR");
 const referencia = numero => numero.split("-").pop().replace(/^0+/, "") || "0";
 
@@ -251,9 +226,6 @@ function parsearPdf(lineas) {
   const mDesc = texto.match(/Desc\s*\(%\s*([\d.,]+)\s*\)\s*:/i);
   const descuento = mDesc ? normalizarNumero(mDesc[1]) : null;
 
-  const mCuit = texto.match(/CUIT:\s*([\d-]+)/i);
-  const cuit = mCuit ? mCuit[1] : null;
-
   // Cliente: la línea que sigue al CUIT (igual que extractor.py)
   let cliente = null;
   const iCuit = lineas.findIndex(l => /^CUIT:/i.test(l));
@@ -292,7 +264,7 @@ function parsearPdf(lineas) {
     productos.push({ ean: t[1], desc, cant, u, precioOrig, descProd });
   }
 
-  return { numero, descuento, cuit, cliente, productos, errores };
+  return { numero, descuento, cliente, productos, errores };
 }
 
 // ── Cálculos (equivalente a processor.py + main.py) ──────────────────
@@ -308,54 +280,8 @@ function calcular(datos) {
   return { ...datos, factor, totalVenta, bultos };
 }
 
-// ── Hoja HTML: orden visual pedido ───────────────────────────────────
-function htmlHoja(r) {
-  const filas = r.productos.map(p => `
-    <tr>
-      <td class="c">${esc(p.ean)}</td>
-      <td>${esc(p.desc)}</td>
-      <td class="c">${p.cant}</td>
-      <td class="c">${p.u}</td>
-      <td class="n">${fmtMoneda(p.precioFinal)}</td>
-      <td class="n">${fmtMoneda(p.subtotal)}</td>
-    </tr>`).join("");
-
-  return `
-    <div class="cab">
-      <div class="cab-izq">
-        <img src="logo_jpa.png" alt="JPA">
-        <div class="empresa">${esc(EMPRESA)}</div>
-        ${JPA_DOMICILIO ? `<div>${esc(JPA_DOMICILIO)}</div>` : ""}
-        ${JPA_CUIT ? `<div>CUIT: ${esc(JPA_CUIT)}</div>` : ""}
-      </div>
-      <div class="cab-der">
-        <div class="tipo">${esc(TIPO)}</div>
-        <div>N° ${esc(r.numero)}</div>
-        <div>Fecha: ${hoy()}</div>
-      </div>
-    </div>
-    <div class="cuadro">
-      <div><b>Nombre / Razón Social:</b> ${esc(r.cliente)}</div>
-      <div><b>Domicilio:</b> ${esc(r.domicilio || "")}</div>
-      <div><b>Localidad:</b> ${esc(r.localidad || "")}</div>
-      <div><b>CUIT / Condición:</b> ${esc(r.cuit || "—")} / ${esc(CONDICION)}</div>
-      <div><b>Referencia:</b> ${esc(referencia(r.numero))}</div>
-    </div>
-    <table>
-      <thead><tr>
-        <th>Código</th><th>Descripción</th><th class="c">Cant. Bultos</th>
-        <th class="c">U. x Bulto</th><th class="n">Precio U.</th><th class="n">Subtotal</th>
-      </tr></thead>
-      <tbody>${filas}</tbody>
-    </table>
-    <table style="border:none; margin-top:6px">
-      <tr class="tot"><td style="width:50%"></td><td class="n">BULTOS</td><td class="n">${r.bultos}</td></tr>
-      <tr class="tot"><td></td><td class="n">IMPORTE TOTAL</td><td class="n">${fmtMoneda(r.totalVenta)}</td></tr>
-    </table>
-    <div class="pie">Comprobante No Autorizado</div>`;
-}
-
-// ── PDF para compartir (jsPDF): mismo orden visual ───────────────────
+// ── PDF del remito (jsPDF), layout de la factura de ejemplo ──────────
+// Medidas en mm sobre A4 (210 × 297)
 function cargarImagen(src) {
   return new Promise((res, rej) => {
     const img = new Image();
@@ -370,125 +296,151 @@ function cargarImagen(src) {
   });
 }
 
-async function crearPdfRemito(r) {
+async function crearPdfRemito(r, logo) {
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({ unit: "mm", format: "a4" });
-  const M = 15, R = 195, topY = 14;
+
+  const M = 19, R = 191, W = R - M;
+  const TABLA_Y = 88.7;          // cabecera de la tabla
+  const FILA_INI = TABLA_Y + 5;  // primera fila de productos
+  const TOTALES_Y = 228.7;       // totales fijos (igual que writer.py: fila 42)
+  const LIMITE_FILA = 262;
   const ref = referencia(r.numero);
 
-  // Encabezado izquierda: logo + datos de JPA
-  let altoLogo = 0;
-  try {
-    const logo = await cargarImagen("logo_jpa.png");
-    altoLogo = 26 * logo.h / logo.w;
-    doc.addImage(logo.data, "PNG", M, topY, 26, altoLogo);
-  } catch (e) { /* sin logo, sigue igual */ }
-
-  let yIzq = topY + altoLogo + 4;
-  doc.setFont("helvetica", "bold"); doc.setFontSize(11);
-  doc.text(EMPRESA, M, yIzq); yIzq += 5;
-  doc.setFont("helvetica", "normal"); doc.setFontSize(9);
-  if (JPA_DOMICILIO) { doc.text(JPA_DOMICILIO, M, yIzq); yIzq += 4.5; }
-  if (JPA_CUIT) { doc.text(`CUIT: ${JPA_CUIT}`, M, yIzq); yIzq += 4.5; }
-
-  // Encabezado derecha: tipo, número y fecha
-  doc.setFont("helvetica", "bold"); doc.setFontSize(12);
-  doc.text(TIPO, R, topY + 4, { align: "right" });
-  doc.setFont("helvetica", "normal"); doc.setFontSize(10);
-  doc.text(`N° ${r.numero}`, R, topY + 11, { align: "right" });
-  doc.text(`Fecha: ${hoy()}`, R, topY + 17, { align: "right" });
-
-  // Cuadro cliente
-  let y = Math.max(yIzq, topY + 22) + 4;
-  const filasCli = [
-    ["Nombre / Razón Social", r.cliente],
-    ["Domicilio", r.domicilio || ""],
-    ["Localidad", r.localidad || ""],
-    ["CUIT / Condición", `${r.cuit || "—"}  /  ${CONDICION}`],
-    ["Referencia", ref],
+  const COLS = [
+    { t: "Código",      x: M,       w: 27, al: "right" },
+    { t: "Descripción", x: M + 27,  w: 70, al: "left" },
+    { t: "U.",          x: M + 97,  w: 11, al: "center" },
+    { t: "Precio U.",   x: M + 108, w: 22, al: "right" },
+    { t: "Cant.",       x: M + 130, w: 13, al: "center" },
+    { t: "Subtotal",    x: M + 143, w: 29, al: "right" },
   ];
-  const altoCli = filasCli.length * 6 + 4;
-  doc.setDrawColor(60);
-  doc.rect(M, y, R - M, altoCli);
-  filasCli.forEach(([lab, val], i) => {
-    const yy = y + 6 + i * 6;
-    doc.setFont("helvetica", "bold"); doc.setFontSize(9); doc.text(`${lab}:`, M + 2, yy);
-    doc.setFont("helvetica", "normal"); doc.text(String(val), M + 48, yy);
-  });
-  y += altoCli + 6;
+  const xTexto = c =>
+    c.al === "left" ? c.x + 1 : c.al === "center" ? c.x + c.w / 2 : c.x + c.w - 1;
 
-  // Tabla de 6 columnas
-  const cols = [
-    { t: "Código",       x: M,        w: 20, al: "left" },
-    { t: "Descripción",  x: M + 20,   w: 58, al: "left" },
-    { t: "Cant. Bultos", x: M + 78,   w: 20, al: "center" },
-    { t: "U. x Bulto",   x: M + 98,   w: 20, al: "center" },
-    { t: "Precio U.",    x: M + 118,  w: 30, al: "right" },
-    { t: "Subtotal",     x: M + 148,  w: 32, al: "right" },
-  ];
-  const xTexto = c => c.al === "left" ? c.x + 1 : c.al === "center" ? c.x + c.w / 2 : c.x + c.w - 1;
-
+  // Cabecera de página: caja de empresa, CLIENTE y datos del cliente
   const dibujarEncabezado = () => {
+    doc.setDrawColor(0);
+    doc.setLineWidth(0.5);
+    doc.rect(M, 26, W, 24);
+    doc.line(117, 26, 117, 50);
+    if (logo) doc.addImage(logo.data, "PNG", 31, 29.5, 15, 15 * logo.h / logo.w);
+
+    doc.setFont("helvetica", "bold"); doc.setFontSize(10);
+    doc.text(EMPRESA, 54, 37.7);
+
+    doc.setFont("helvetica", "normal"); doc.setFontSize(9);
+    doc.text("ORIGINAL", R - 2, 28, { align: "right" });
+    doc.setFont("helvetica", "bold");
+    doc.text(TIPO, 119, 33);
+    doc.setFont("helvetica", "normal");
+    doc.text("Fecha de emisión:", 119, 42.5);
+    doc.text(hoy(), R - 2, 47.6, { align: "right" });
+
+    doc.setLineWidth(0.3);
+    doc.rect(M, 50, W, 5);
+    doc.rect(M, 55, W, 5);
+    doc.text("CLIENTE", M + 1, 58.6);
+
+    doc.rect(M, 65, W, 19);
+    doc.text(`Apellido y nombre/ razon social:  ${r.cliente}`, M + 1, 68.6);
+    doc.text(`Referencia: ${ref}`, M + 1, 72.7);
+    doc.text("Localidad y Dirección:", M + 1, 76.8);
+    doc.text(`Condicion: ${CONDICION}`, M + 1, 80.9);
+  };
+
+  const dibujarTablaHeader = () => {
+    doc.setLineWidth(0.3);
     doc.setFont("helvetica", "bold"); doc.setFontSize(8);
-    doc.setFillColor(230, 230, 230);
-    doc.rect(M, y, R - M, 6, "FD");
-    cols.forEach(c => doc.text(c.t, xTexto(c), y + 4, { align: c.al }));
-    y += 6;
+    doc.rect(M, TABLA_Y, W, 5);
+    COLS.slice(1).forEach(c => doc.line(c.x, TABLA_Y, c.x, TABLA_Y + 5));
+    COLS.forEach(c => doc.text(c.t, xTexto(c), TABLA_Y + 3.5, { align: c.al }));
     doc.setFont("helvetica", "normal");
   };
 
+  const nuevaPagina = () => {
+    doc.addPage();
+    dibujarEncabezado();
+    dibujarTablaHeader();
+  };
+
   dibujarEncabezado();
+  dibujarTablaHeader();
+
+  // Filas de productos
+  let y = FILA_INI;
+  doc.setFontSize(7.5);
   for (const p of r.productos) {
-    doc.setFontSize(8.5);
-    const descLineas = doc.splitTextToSize(p.desc, cols[1].w - 2);
-    const h = Math.max(6, descLineas.length * 4 + 2);
-    if (y + h > 265) {
-      doc.addPage(); y = 15; dibujarEncabezado(); doc.setFontSize(8.5);
+    const lineas = doc.splitTextToSize(p.desc, COLS[1].w - 2);
+    const h = Math.max(5, lineas.length * 3.4 + 1.6);
+    if (y + h > LIMITE_FILA) {
+      nuevaPagina();
+      y = FILA_INI;
     }
-    doc.rect(M, y, R - M, h);
-    cols.slice(1).forEach(c => doc.line(c.x, y, c.x, y + h));
-    const vals = [p.ean, "", String(p.cant), String(p.u), fmtMoneda(p.precioFinal), fmtMoneda(p.subtotal)];
-    cols.forEach((c, i) => {
-      if (i === 1) descLineas.forEach((ln, k) => doc.text(ln, c.x + 1, y + 4 + k * 4));
-      else doc.text(vals[i], xTexto(c), y + 4, { align: c.al });
+    doc.setLineWidth(0.3);
+    doc.rect(M, y, W, h);
+    COLS.slice(1).forEach(c => doc.line(c.x, y, c.x, y + h));
+
+    const vals = [p.ean, "", String(p.u), fmtMoneda(p.precioFinal), String(p.cant), fmtMoneda(p.subtotal)];
+    doc.setFontSize(7.5);
+    COLS.forEach((c, i) => {
+      if (i === 1) lineas.forEach((ln, k) => doc.text(ln, c.x + 1, y + 3.5 + k * 3.4));
+      else doc.text(vals[i], xTexto(c), y + 3.5, { align: c.al });
     });
     y += h;
   }
 
-  // Resumen: totales alineados a la derecha
-  if (y + 30 > 280) { doc.addPage(); y = 15; }
-  y += 4;
-  doc.setFont("helvetica", "bold"); doc.setFontSize(9);
-  doc.text("BULTOS", cols[5].x - 2, y + 4, { align: "right" });
-  doc.text(String(r.bultos), R, y + 4, { align: "right" });
-  y += 6;
-  doc.text("IMPORTE TOTAL", cols[5].x - 2, y + 4, { align: "right" });
-  doc.text(fmtMoneda(r.totalVenta), R, y + 4, { align: "right" });
-  y += 6;
+  // Totales (Bultos y Total) bajo las columnas Cant. y Subtotal
+  let yTot = Math.max(TOTALES_Y, y);
+  if (yTot + 10 + 2.8 + 30 > 285) {
+    nuevaPagina();
+    yTot = FILA_INI;
+  }
+  const dibujarTotal = (yy, label, valor) => {
+    doc.setFont("helvetica", "normal"); doc.setFontSize(8);
+    doc.rect(COLS[4].x, yy, COLS[4].w, 5);
+    doc.rect(COLS[5].x, yy, COLS[5].w, 5);
+    doc.text(label, COLS[4].x + 1, yy + 3.5);
+    doc.text(valor, R - 1, yy + 3.5, { align: "right" });
+  };
+  dibujarTotal(yTot, "BULTOS", String(r.bultos));
+  dibujarTotal(yTot + 5, "TOTAL", fmtMoneda(r.totalVenta));
 
-  // Leyenda del pie
-  y += 8;
+  // Caja de pie
+  const yPie = yTot + 10 + 2.8;
+  doc.setLineWidth(0.5);
+  doc.rect(M, yPie, W, 30);
+  doc.setLineWidth(0.3);
   doc.setFont("helvetica", "normal"); doc.setFontSize(9);
-  doc.text("Comprobante No Autorizado", M, y);
+  doc.text("Comprobante No Autorizado", M + 1, yPie + 5);
 
+  // Pie de página en todas las hojas
   const total = doc.internal.getNumberOfPages();
   for (let i = 1; i <= total; i++) {
-    doc.setPage(i); doc.setFontSize(8);
-    doc.text(`${r.cliente} | Ref: ${ref} | Página ${i} de ${total}`, R, 290, { align: "right" });
+    doc.setPage(i);
+    doc.setFont("helvetica", "normal"); doc.setFontSize(8);
+    doc.text(r.cliente, M, 284);
+    doc.text(`Ref: ${ref}  |  ${hoy()}`, 105, 284, { align: "center" });
+    doc.text(`Página ${i} de ${total}`, R, 284, { align: "right" });
   }
   return doc.output("blob");
 }
 
-// ── Render del PDF original (pdf.js) ─────────────────────────────────
-async function renderizarOriginal(bytes) {
+// ── Visor de PDF (pdf.js): muestra todas las hojas ───────────────────
+async function renderPdfEn(bytes, contenedorId) {
+  const cont = $(contenedorId);
+  cont.innerHTML = "";
   const pdf = await pdfjsLib.getDocument({ data: bytes.slice(0) }).promise;
-  const page = await pdf.getPage(1);
   const ancho = $("deslizador").clientWidth - 24;
-  const vp1 = page.getViewport({ scale: 1 });
-  const vp = page.getViewport({ scale: (ancho * 2) / vp1.width });
-  const canvas = $("canvasOriginal");
-  canvas.width = vp.width; canvas.height = vp.height;
-  await page.render({ canvasContext: canvas.getContext("2d"), viewport: vp }).promise;
+  for (let n = 1; n <= pdf.numPages; n++) {
+    const page = await pdf.getPage(n);
+    const vp1 = page.getViewport({ scale: 1 });
+    const vp = page.getViewport({ scale: (ancho * 2) / vp1.width });
+    const canvas = document.createElement("canvas");
+    canvas.width = vp.width; canvas.height = vp.height;
+    cont.appendChild(canvas);
+    await page.render({ canvasContext: canvas.getContext("2d"), viewport: vp }).promise;
+  }
 }
 
 // ── Flujo ────────────────────────────────────────────────────────────
@@ -516,11 +468,8 @@ $("archivo").addEventListener("change", async e => {
 
 function cargarPantalla2() {
   $("nroRemito").textContent = estado.numero;
-  $("cuitTxt").textContent = estado.cuit || "no detectado";
   $("cantProd").textContent = estado.productos.length;
   $("cliente").value = estado.cliente || "";
-  $("domicilio").value = "";
-  $("localidad").value = "";
   $("descTxt").textContent = estado.descuento != null ? `${estado.descuento} %` : "no detectado";
   $("bloqueDesc").hidden = estado.descuento != null;
   $("descManual").value = "";
@@ -542,19 +491,21 @@ $("btnGenerar").addEventListener("click", async () => {
   if (!cliente) { $("err2").textContent = "Ingresá el nombre del cliente."; return; }
 
   $("err2").textContent = "";
-  const r = calcular({
-    ...estado, cliente, descuento,
-    domicilio: $("domicilio").value.trim(),
-    localidad: $("localidad").value.trim(),
-  });
+  const r = calcular({ ...estado, cliente, descuento });
   estado.resultado = r;
-  r.pdfBlob = await crearPdfRemito(r);
 
-  $("hoja").innerHTML = htmlHoja(r);
+  let logo = null;
+  try { logo = await cargarImagen("logo_jpa.png"); } catch (e) { /* sin logo */ }
+
+  r.pdfBlob = await crearPdfRemito(r, logo);
+  const bytesRemito = new Uint8Array(await r.pdfBlob.arrayBuffer());
+
   $("tituloS3").textContent = `Remito ${r.numero}`;
   $("deslizador").scrollLeft = 0;
   mostrar("s3");
-  renderizarOriginal(estado.bytes).catch(err => console.error(err));
+
+  await renderPdfEn(bytesRemito, "visorRemito");
+  renderPdfEn(estado.bytes, "visorOriginal").catch(err => console.error(err));
 });
 
 $("deslizador").addEventListener("scroll", () => {
@@ -578,6 +529,11 @@ $("btnEnviar").addEventListener("click", async () => {
     alert("Este navegador no permite compartir archivos. Se descargó el PDF.");
   }
 });
+
+$("btnNuevo").addEventListener("click", () => { estado = null; mostrar("s1"); });
+</script>
+</body>
+</html>
 
 $("btnNuevo").addEventListener("click", () => { estado = null; mostrar("s1"); });
 </script>
