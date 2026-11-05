@@ -1,0 +1,500 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#1f3b5a">
+<title>Remitos JPA</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<style>
+  :root { --azul:#1f3b5a; --fondo:#eef1f5; --error:#b00020; }
+  * { box-sizing:border-box; }
+  html, body { margin:0; height:100%; background:var(--fondo); font-family:Calibri, Arial, sans-serif; color:#111; }
+  .pantalla { display:none; min-height:100%; flex-direction:column; padding:16px;
+              padding-top:max(16px, env(safe-area-inset-top)); padding-bottom:max(16px, env(safe-area-inset-bottom)); }
+  .pantalla.activa { display:flex; }
+  .centro { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:28px; }
+  .logo { width:200px; height:200px; border-radius:50%; object-fit:cover; background:#fff; box-shadow:0 4px 14px rgba(0,0,0,.15); }
+  .btn { font:inherit; font-size:18px; border:0; border-radius:12px; padding:14px 22px; background:var(--azul);
+         color:#fff; cursor:pointer; text-align:center; display:inline-block; margin:0; }
+  .btn-sec { background:#fff; color:var(--azul); border:2px solid var(--azul); }
+  .btn-grande { width:100%; max-width:420px; }
+  .oculto { position:absolute; width:1px; height:1px; opacity:0; overflow:hidden; }
+  .error { color:var(--error); min-height:1.2em; text-align:center; margin:0; }
+  h2 { color:var(--azul); margin:8px 0 12px; }
+  .tarjeta { background:#fff; border-radius:14px; padding:14px; margin-bottom:12px; }
+  .campo { display:block; margin:12px 0; font-weight:600; }
+  .campo input, .campo select { display:block; width:100%; font:inherit; font-size:18px; padding:12px;
+        border:1px solid #bbb; border-radius:10px; margin-top:6px; background:#fff; }
+  .aviso { background:#fff4d6; border-radius:10px; padding:10px; font-size:15px; margin-bottom:8px; }
+  .btn-col { display:flex; flex-direction:column; gap:10px; align-items:center; margin-top:10px; }
+  /* Pantalla 3 */
+  #s3 { padding:0; }
+  .barra { background:var(--azul); color:#fff; padding:14px 16px; font-size:18px; font-weight:600; }
+  .deslizador { flex:1; display:flex; overflow-x:auto; scroll-snap-type:x mandatory; -webkit-overflow-scrolling:touch; }
+  .panel { flex:0 0 100%; scroll-snap-align:start; overflow-y:auto; padding:12px; }
+  .hoja { background:#fff; box-shadow:0 2px 8px rgba(0,0,0,.12); padding:14px; max-width:700px; margin:0 auto; }
+  .puntos { text-align:center; padding:6px 0 0; }
+  .pt { display:inline-block; width:9px; height:9px; border-radius:50%; background:#bbb; margin:0 4px; }
+  .pt.on { background:var(--azul); }
+  .hint { text-align:center; font-size:14px; color:#555; margin:2px 0 6px; }
+  .acciones { display:flex; flex-direction:column; gap:10px; padding:12px 16px;
+              padding-bottom:max(12px, env(safe-area-inset-bottom)); background:#fff; align-items:center; }
+  /* Hoja del remito (replica writer.py) */
+  table { width:100%; border-collapse:collapse; font-size:13px; }
+  th, td { border:1px solid #333; padding:4px 5px; }
+  th { background:#eee; }
+  .n { text-align:right; }
+  .c { text-align:center; }
+  .cab { display:flex; justify-content:space-between; gap:10px; align-items:flex-start; }
+  .cab img { width:110px; }
+  .cab-der { text-align:right; font-size:14px; line-height:1.5; }
+  .cli { font-size:14px; line-height:1.6; margin:12px 0; }
+  .totales td { font-weight:600; }
+  .pie { font-size:12px; margin-top:12px; }
+  #canvasOriginal { width:100%; height:auto; display:block; background:#fff; }
+</style>
+</head>
+<body>
+
+<!-- PANTALLA 1: inicio -->
+<section id="s1" class="pantalla activa">
+  <div class="centro">
+    <img class="logo" src="logo_jpa.png" alt="JPA">
+    <label class="btn btn-grande" for="archivo">Cargar remito</label>
+    <input id="archivo" class="oculto" type="file" accept="application/pdf">
+    <p id="cargando" class="error" style="color:#333" hidden>Leyendo remito…</p>
+    <p id="err1" class="error"></p>
+  </div>
+</section>
+
+<!-- PANTALLA 2: confirmar cliente y descuento -->
+<section id="s2" class="pantalla">
+  <h2>Confirmar datos</h2>
+  <div class="tarjeta">
+    <div>Remito: <b id="nroRemito"></b></div>
+    <div>Productos: <b id="cantProd"></b></div>
+    <div>Descuento del PDF: <b id="descTxt"></b></div>
+  </div>
+  <label class="campo">Cliente (podés cambiarlo)
+    <input id="cliente" type="text" autocomplete="off">
+  </label>
+  <div id="bloqueDesc" class="tarjeta" hidden>
+    <div class="aviso">No se encontró el descuento en el PDF. Elegí el porcentaje:</div>
+    <label class="campo">Descuento
+      <select id="descManual">
+        <option value="">Elegir…</option>
+        <option value="0">0 %</option>
+        <option value="10">10 %</option>
+        <option value="20">20 %</option>
+      </select>
+    </label>
+  </div>
+  <div id="avisos"></div>
+  <p id="err2" class="error"></p>
+  <div class="btn-col">
+    <button id="btnGenerar" class="btn btn-grande">Generar remito</button>
+    <button id="btnVolver" class="btn btn-sec btn-grande">Volver</button>
+  </div>
+</section>
+
+<!-- PANTALLA 3: remito generado + original deslizable -->
+<section id="s3" class="pantalla">
+  <div class="barra" id="tituloS3">Remito</div>
+  <div class="deslizador" id="deslizador">
+    <div class="panel"><div class="hoja" id="hoja"></div></div>
+    <div class="panel"><div class="hoja" style="padding:4px"><canvas id="canvasOriginal"></canvas></div></div>
+  </div>
+  <div class="puntos"><span class="pt on" id="pt1"></span><span class="pt" id="pt2"></span></div>
+  <div class="hint">← Deslizá para ver el original →</div>
+  <div class="acciones">
+    <button id="btnEnviar" class="btn btn-grande">Enviar por WhatsApp</button>
+    <button id="btnNuevo" class="btn btn-sec btn-grande">Nuevo</button>
+  </div>
+</section>
+
+<script>
+const GANANCIA = 0.135;
+const EMPRESA = "DISTRIBUIDORA JPA";
+const CONDICION = "Contado";
+const $ = id => document.getElementById(id);
+
+pdfjsLib.GlobalWorkerOptions.workerSrc =
+  "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+
+let estado = null;
+
+// ── Utilidades ───────────────────────────────────────────────────────
+function mostrar(id) {
+  document.querySelectorAll(".pantalla").forEach(s => s.classList.toggle("activa", s.id === id));
+  window.scrollTo(0, 0);
+}
+const esc = s => String(s).replace(/[&<>"']/g, c =>
+  ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const fmtMoneda = n =>
+  n.toLocaleString("es-AR", {style:"currency", currency:"ARS"}).replace(/\u00a0/g, " ");
+
+function descargar(blob, nombre) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = nombre;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
+}
+
+// "$1,682.96" o "$1.682,96" → 1682.96
+function normalizarNumero(t) {
+  let s = String(t).replace(/[$\s]/g, "");
+  if (s.includes(",") && s.includes(".")) {
+    s = s.lastIndexOf(".") > s.lastIndexOf(",")
+      ? s.replace(/,/g, "")
+      : s.replace(/\./g, "").replace(",", ".");
+  } else if (s.includes(",")) {
+    s = s.replace(",", ".");
+  } else if (/^\d{1,3}(\.\d{3})+$/.test(s)) {
+    s = s.replace(/\./g, "");
+  }
+  return parseFloat(s);
+}
+
+// ── Lectura del PDF (pdf.js) ─────────────────────────────────────────
+// Agrupa los textos por posición vertical para reconstruir las líneas.
+async function leerLineas(bytes) {
+  const pdf = await pdfjsLib.getDocument({ data: bytes.slice(0) }).promise;
+  const lineas = [];
+  for (let n = 1; n <= pdf.numPages; n++) {
+    const page = await pdf.getPage(n);
+    const tc = await page.getTextContent();
+    const filas = [];
+    for (const it of tc.items) {
+      if (!it.str || !it.str.trim()) continue;
+      const y = it.transform[5], x = it.transform[4];
+      let f = filas.find(f => Math.abs(f.y - y) < 2);
+      if (!f) { f = { y, items: [] }; filas.push(f); }
+      f.items.push({ x, s: it.str });
+    }
+    filas.sort((a, b) => b.y - a.y);
+    for (const f of filas) {
+      f.items.sort((a, b) => a.x - b.x);
+      lineas.push(f.items.map(i => i.s).join(" ").replace(/\s+/g, " ").trim());
+    }
+  }
+  return lineas;
+}
+
+// ── Extracción (equivalente a extractor.py) ──────────────────────────
+function parsearPdf(lineas) {
+  const texto = lineas.join("\n");
+
+  const mNro = texto.match(/Nro[:\s]+(\d{4}-\d{8})/i);
+  const numero = mNro ? mNro[1] : null;
+
+  const mDesc = texto.match(/Desc\s*\(%\s*([\d.,]+)\s*\)\s*:/i);
+  const descuento = mDesc ? normalizarNumero(mDesc[1]) : null;
+
+  // Cliente: la línea que sigue al CUIT (igual que extractor.py)
+  let cliente = null;
+  const iCuit = lineas.findIndex(l => /^CUIT:/i.test(l));
+  if (iCuit >= 0) {
+    const cand = (lineas[iCuit + 1] || "").trim();
+    if (cand && !/^código/i.test(cand) && !/EAN/.test(cand)) {
+      cliente = cand.toLowerCase().replace(/(^|\s)\S/g, c => c.toUpperCase());
+    }
+  }
+
+  // Productos: [Código, EAN, Descripción..., UxB, UxI, Blt, %Desc, Precio, Total]
+  const productos = [];
+  const errores = [];
+  for (const linea of lineas) {
+    const t = linea.split(" ");
+    if (t.length < 9 || !/^\d+$/.test(t[0]) || !/^\d{8,14}$/.test(t[1])) continue;
+    const n = t.length;
+    const total = t[n - 1], precio = t[n - 2];
+    if (!precio.includes("$") || !total.includes("$")) continue;
+
+    const cant = parseInt(t[n - 5], 10);   // UxI = bultos (Cant.)
+    const un   = parseInt(t[n - 4], 10);   // Blt = unidades totales
+    if (!cant || isNaN(un)) continue;
+
+    const u = Math.floor(un / cant);        // U. = unidades por bulto
+    const desc = t.slice(2, n - 6).join(" ");
+    const precioOrig = normalizarNumero(precio);
+    const descProd = normalizarNumero(t[n - 3]) || 0;
+    const totalPdf = normalizarNumero(total);
+
+    // Control: el total del PDF tiene que cuadrar con u × cant × precio
+    const esperado = u * cant * precioOrig * (1 - descProd / 100);
+    if (Math.abs(esperado - totalPdf) > 1) {
+      errores.push(`Revisar "${desc}": el total del PDF no coincide con el cálculo.`);
+    }
+
+    productos.push({ ean: t[1], desc, cant, u, precioOrig, descProd });
+  }
+
+  return { numero, descuento, cliente, productos, errores };
+}
+
+// ── Cálculos (equivalente a processor.py + main.py) ──────────────────
+function calcular(datos) {
+  const factor = (1 - datos.descuento / 100) * (1 + GANANCIA);
+  let totalVenta = 0, bultos = 0;
+  for (const p of datos.productos) {
+    p.precioFinal = p.precioOrig * (1 - p.descProd / 100) * factor;
+    p.subtotal = p.u * p.precioFinal * p.cant;
+    totalVenta += p.subtotal;
+    bultos += p.cant;
+  }
+  return { ...datos, factor, totalVenta, bultos };
+}
+
+// ── Hoja HTML (replica el layout de writer.py) ───────────────────────
+function htmlHoja(r) {
+  const ref = r.numero.split("-").pop().replace(/^0+/, "") || "0";
+  const fecha = new Date().toLocaleDateString("es-AR");
+  const filas = r.productos.map(p => `
+    <tr>
+      <td class="c">${esc(p.ean)}</td>
+      <td>${esc(p.desc)}</td>
+      <td class="c">${p.u}</td>
+      <td class="n">${fmtMoneda(p.precioFinal)}</td>
+      <td class="c">${p.cant}</td>
+      <td class="n">${fmtMoneda(p.subtotal)}</td>
+    </tr>`).join("");
+
+  return `
+    <div class="cab">
+      <div><img src="logo_jpa.png" alt=""><div style="font-weight:700;margin-top:4px">${EMPRESA}</div></div>
+      <div class="cab-der">
+        <div>ORIGINAL</div>
+        <b>Comprobante</b>
+        <div>Fecha de emisión: ${fecha}</div>
+      </div>
+    </div>
+    <div class="cli">
+      <div><b>CLIENTE</b></div>
+      <div>Apellido y nombre / razón social: ${esc(r.cliente)}</div>
+      <div>Referencia: ${ref}</div>
+      <div>Localidad y Dirección:</div>
+      <div>Condición: ${CONDICION}</div>
+    </div>
+    <table>
+      <thead><tr>
+        <th>Código</th><th>Descripción</th><th class="c">U.</th>
+        <th class="n">Precio U.</th><th class="c">Cant.</th><th class="n">Subtotal</th>
+      </tr></thead>
+      <tbody>${filas}</tbody>
+      <tfoot class="totales">
+        <tr><td colspan="4"></td><td class="c">BULTOS</td><td class="n">${r.bultos}</td></tr>
+        <tr><td colspan="4"></td><td class="c">TOTAL</td><td class="n">${fmtMoneda(r.totalVenta)}</td></tr>
+      </tfoot>
+    </table>
+    <div class="pie">Comprobante No Autorizado</div>`;
+}
+
+// ── PDF para compartir (jsPDF) ───────────────────────────────────────
+function cargarImagen(src) {
+  return new Promise((res, rej) => {
+    const img = new Image();
+    img.onload = () => {
+      const c = document.createElement("canvas");
+      c.width = img.naturalWidth; c.height = img.naturalHeight;
+      c.getContext("2d").drawImage(img, 0, 0);
+      res({ data: c.toDataURL("image/png"), w: img.naturalWidth, h: img.naturalHeight });
+    };
+    img.onerror = rej;
+    img.src = src;
+  });
+}
+
+async function crearPdfRemito(r) {
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ unit: "mm", format: "a4" });
+  const M = 15, R = 195, topY = 14;
+  const ref = r.numero.split("-").pop().replace(/^0+/, "") || "0";
+  const fecha = new Date().toLocaleDateString("es-AR");
+
+  let altoLogo = 0;
+  try {
+    const logo = await cargarImagen("logo_jpa.png");
+    altoLogo = 28 * logo.h / logo.w;
+    doc.addImage(logo.data, "PNG", M, topY, 28, altoLogo);
+  } catch (e) { /* sin logo, sigue igual */ }
+
+  let y = topY + altoLogo + 6;
+  doc.setFont("helvetica", "bold"); doc.setFontSize(11);
+  doc.text(EMPRESA, M, y);
+
+  doc.setFont("helvetica", "normal"); doc.setFontSize(10);
+  doc.text("ORIGINAL", R, topY + 4, { align: "right" });
+  doc.setFont("helvetica", "bold");
+  doc.text("Comprobante", R, topY + 11, { align: "right" });
+  doc.setFont("helvetica", "normal");
+  doc.text(`Fecha de emisión: ${fecha}`, R, topY + 18, { align: "right" });
+
+  y += 10;
+  doc.setFont("helvetica", "bold"); doc.text("CLIENTE", M, y); y += 6;
+  doc.setFont("helvetica", "normal");
+  doc.text(`Apellido y nombre / razón social: ${r.cliente}`, M, y); y += 6;
+  doc.text(`Referencia: ${ref}`, M, y); y += 6;
+  doc.text("Localidad y Dirección:", M, y); y += 6;
+  doc.text(`Condición: ${CONDICION}`, M, y); y += 10;
+
+  const cols = [
+    { t: "Código",      x: M,       w: 24,      al: "left" },
+    { t: "Descripción", x: M + 24,  w: 76,      al: "left" },
+    { t: "U.",          x: M + 100, w: 12,      al: "center" },
+    { t: "Precio U.",   x: M + 112, w: 26,      al: "right" },
+    { t: "Cant.",       x: M + 138, w: 12,      al: "center" },
+    { t: "Subtotal",    x: M + 150, w: R - M - 150, al: "right" },
+  ];
+  const xTexto = c => c.al === "left" ? c.x + 1 : c.al === "center" ? c.x + c.w / 2 : c.x + c.w - 1;
+
+  const dibujarEncabezado = () => {
+    doc.setFont("helvetica", "bold"); doc.setFontSize(9);
+    doc.setFillColor(230, 230, 230);
+    doc.rect(M, y, R - M, 6, "FD");
+    cols.forEach(c => doc.text(c.t, xTexto(c), y + 4, { align: c.al }));
+    y += 6;
+    doc.setFont("helvetica", "normal");
+  };
+
+  dibujarEncabezado();
+  for (const p of r.productos) {
+    doc.setFontSize(8.5);
+    const descLineas = doc.splitTextToSize(p.desc, cols[1].w - 2);
+    const h = Math.max(6, descLineas.length * 4 + 2);
+    if (y + h > 270) {
+      doc.addPage(); y = 15; dibujarEncabezado(); doc.setFontSize(8.5);
+    }
+    doc.rect(M, y, R - M, h);
+    cols.slice(1).forEach(c => doc.line(c.x, y, c.x, y + h));
+    const vals = [p.ean, "", String(p.u), fmtMoneda(p.precioFinal), String(p.cant), fmtMoneda(p.subtotal)];
+    cols.forEach((c, i) => {
+      if (i === 1) descLineas.forEach((ln, k) => doc.text(ln, c.x + 1, y + 4 + k * 4));
+      else doc.text(vals[i], xTexto(c), y + 4, { align: c.al });
+    });
+    y += h;
+  }
+
+  if (y + 20 > 270) { doc.addPage(); y = 15; }
+  const filaTotal = (label, valor) => {
+    doc.setFont("helvetica", "bold"); doc.setFontSize(9);
+    doc.rect(cols[4].x, y, cols[4].w, 6);
+    doc.rect(cols[5].x, y, cols[5].w, 6);
+    doc.text(label, cols[4].x + cols[4].w / 2, y + 4, { align: "center" });
+    doc.text(valor, cols[5].x + cols[5].w - 1, y + 4, { align: "right" });
+    y += 6;
+  };
+  filaTotal("BULTOS", String(r.bultos));
+  filaTotal("TOTAL", fmtMoneda(r.totalVenta));
+
+  y += 8;
+  doc.setFont("helvetica", "normal"); doc.setFontSize(9);
+  doc.text("Comprobante No Autorizado", M, y);
+
+  const total = doc.internal.getNumberOfPages();
+  for (let i = 1; i <= total; i++) {
+    doc.setPage(i); doc.setFontSize(8);
+    doc.text(`${r.cliente} | Ref: ${ref} | Página ${i} de ${total}`, R, 290, { align: "right" });
+  }
+  return doc.output("blob");
+}
+
+// ── Render del PDF original (pdf.js) ─────────────────────────────────
+async function renderizarOriginal(bytes) {
+  const pdf = await pdfjsLib.getDocument({ data: bytes.slice(0) }).promise;
+  const page = await pdf.getPage(1);
+  const ancho = $("deslizador").clientWidth - 16;
+  const vp1 = page.getViewport({ scale: 1 });
+  const vp = page.getViewport({ scale: (ancho * 2) / vp1.width });
+  const canvas = $("canvasOriginal");
+  canvas.width = vp.width; canvas.height = vp.height;
+  await page.render({ canvasContext: canvas.getContext("2d"), viewport: vp }).promise;
+}
+
+// ── Flujo ────────────────────────────────────────────────────────────
+$("archivo").addEventListener("change", async e => {
+  const file = e.target.files[0];
+  if (!file) return;
+  $("err1").textContent = "";
+  $("cargando").hidden = false;
+  try {
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const lineas = await leerLineas(bytes);
+    const datos = parsearPdf(lineas);
+    if (!datos.numero) throw new Error("no se encontró el número de remito. ¿Es el PDF correcto?");
+    if (!datos.productos.length) throw new Error("no se encontraron productos en el PDF.");
+    estado = { bytes, ...datos };
+    cargarPantalla2();
+    mostrar("s2");
+  } catch (err) {
+    $("err1").textContent = "Error: " + err.message;
+  } finally {
+    $("cargando").hidden = true;
+    e.target.value = "";
+  }
+});
+
+function cargarPantalla2() {
+  $("nroRemito").textContent = estado.numero;
+  $("cantProd").textContent = estado.productos.length;
+  $("cliente").value = estado.cliente || "";
+  $("descTxt").textContent = estado.descuento != null ? `${estado.descuento} %` : "no detectado";
+  $("bloqueDesc").hidden = estado.descuento != null;
+  $("descManual").value = "";
+  $("avisos").innerHTML = estado.errores.length
+    ? `<div class="aviso">${estado.errores.map(esc).join("<br>")}</div>` : "";
+  $("err2").textContent = "";
+}
+
+$("btnVolver").addEventListener("click", () => mostrar("s1"));
+
+$("btnGenerar").addEventListener("click", async () => {
+  const cliente = $("cliente").value.trim();
+  let descuento = estado.descuento;
+  if (descuento == null) {
+    const v = $("descManual").value;
+    if (v === "") { $("err2").textContent = "Elegí el porcentaje de descuento."; return; }
+    descuento = parseFloat(v);
+  }
+  if (!cliente) { $("err2").textContent = "Ingresá el nombre del cliente."; return; }
+
+  $("err2").textContent = "";
+  const r = calcular({ ...estado, cliente, descuento });
+  estado.resultado = r;
+  r.pdfBlob = await crearPdfRemito(r);
+
+  $("hoja").innerHTML = htmlHoja(r);
+  $("tituloS3").textContent = `Remito ${r.numero}`;
+  $("deslizador").scrollLeft = 0;
+  mostrar("s3");
+  renderizarOriginal(estado.bytes).catch(err => console.error(err));
+});
+
+$("deslizador").addEventListener("scroll", () => {
+  const d = $("deslizador");
+  const i = Math.round(d.scrollLeft / d.clientWidth);
+  $("pt1").classList.toggle("on", i === 0);
+  $("pt2").classList.toggle("on", i === 1);
+});
+
+$("btnEnviar").addEventListener("click", async () => {
+  const r = estado.resultado;
+  const file = new File([r.pdfBlob], `Remito_${r.numero}.pdf`, { type: "application/pdf" });
+  if (navigator.canShare && navigator.canShare({ files: [file] })) {
+    try {
+      await navigator.share({ files: [file], title: `Remito ${r.numero}` });
+    } catch (e) {
+      if (e.name !== "AbortError") alert("No se pudo compartir: " + e.message);
+    }
+  } else {
+    descargar(r.pdfBlob, file.name);
+    alert("Este navegador no permite compartir archivos. Se descargó el PDF.");
+  }
+});
+
+$("btnNuevo").addEventListener("click", () => { estado = null; mostrar("s1"); });
+</script>
+</body>
+</html>
