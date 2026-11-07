@@ -35,6 +35,21 @@
   .error { color:var(--error); min-height:1.2em; text-align:center; margin:0; }
   .estado-offline { color:#2e7d32; font-size:14px; margin:0; text-align:center; }
   .version { color:#888; font-size:13px; margin:0; text-align:center; }
+
+  /* Ayuda */
+  #s1 { position:relative; }
+  .btn-ayuda { position:absolute; top:max(12px, env(safe-area-inset-top)); right:16px; width:40px; height:40px;
+               border-radius:50%; border:2px solid var(--azul); background:#fff; color:var(--azul);
+               font:inherit; font-size:22px; font-weight:700; line-height:1; padding:0; cursor:pointer; }
+  .modal { position:fixed; inset:0; z-index:20; background:rgba(0,0,0,.5); display:flex;
+           align-items:center; justify-content:center; padding:16px; }
+  .modal[hidden] { display:none; }
+  .modal-caja { background:#fff; border-radius:14px; padding:18px; width:100%; max-width:420px;
+                max-height:90vh; overflow-y:auto; }
+  .modal-caja h2 { margin-top:0; }
+  .modal-caja ol { padding-left:22px; margin:0 0 12px; line-height:1.5; font-size:17px; }
+  .modal-caja li { margin-bottom:8px; }
+  .nota { font-size:14px; color:#555; margin:0 0 14px; }
   h2 { color:var(--azul); margin:8px 0 12px; }
   .tarjeta { background:#fff; border-radius:14px; padding:14px; margin-bottom:12px; }
   .campo { display:block; margin:12px 0; font-weight:600; }
@@ -65,6 +80,7 @@
 
 <!-- PANTALLA 1: inicio -->
 <section id="s1" class="pantalla activa">
+  <button id="btnAyuda" class="btn-ayuda" aria-label="Ayuda">?</button>
   <div class="centro">
     <img class="logo" src="logo_jpa.png" alt="JPA">
     <label class="btn btn-grande" for="archivo">Cargar remito</label>
@@ -90,6 +106,12 @@
   </div>
   <label class="campo">Cliente (podés cambiarlo)
     <input id="cliente" type="text" autocomplete="off">
+  </label>
+  <label class="campo">Ganancia
+    <select id="ganancia">
+      <option value="13.5">13.5 %</option>
+      <option value="15">15 %</option>
+    </select>
   </label>
   <div id="bloqueDesc" class="tarjeta" hidden>
     <div class="aviso">No se encontró el descuento en el PDF. Elegí el porcentaje:</div>
@@ -124,6 +146,21 @@
     <button id="btnNuevo" class="btn btn-sec btn-grande">Nuevo</button>
   </div>
 </section>
+
+<!-- AYUDA -->
+<div id="ayuda" class="modal" hidden role="dialog" aria-modal="true" aria-labelledby="ayudaTitulo">
+  <div class="modal-caja">
+    <h2 id="ayudaTitulo">¿Cómo se usa?</h2>
+    <ol>
+      <li>Descargá el remito de tu mail al celular (acordate dónde lo guardás).</li>
+      <li>Tocá <b>Cargar remito</b> y seleccioná el PDF que descargaste.</li>
+      <li>Verificá los datos (cliente, descuento y ganancia) y tocá <b>Generar remito</b>.</li>
+      <li>Tocá <b>Compartir</b> y elegí WhatsApp, Gmail u otra app para enviarlo.</li>
+    </ol>
+    <p class="nota">La app funciona sin conexión: si no hay señal, el mensaje se envía cuando vuelva.</p>
+    <button id="btnCerrarAyuda" class="btn btn-grande">Entendido</button>
+  </div>
+</div>
 
 <script>
 const GANANCIA = 0.135;
@@ -212,7 +249,9 @@ function liberarVisores() {
 }
 history.replaceState({ pantalla: "s1" }, "");
 window.addEventListener("popstate", e => {
+  $("ayuda").hidden = true;
   let id = (e.state && e.state.pantalla) || "s1";
+  if (id === "ayuda") id = "s1";
   // Si la app se recargó y ya no hay datos, no mostrar pantallas vacías
   if ((id === "s2" && !estado) || (id === "s3" && !(estado && estado.resultado))) id = "s1";
   mostrar(id);
@@ -329,7 +368,8 @@ function parsearPdf(lineas) {
 
 // ── Cálculos (equivalente a processor.py + main.py) ──────────────────
 function calcular(datos) {
-  const factor = (1 - datos.descuento / 100) * (1 + GANANCIA);
+  const ganancia = datos.ganancia != null ? datos.ganancia : GANANCIA;
+  const factor = (1 - datos.descuento / 100) * (1 + ganancia);
   let totalVenta = 0, bultos = 0;
   for (const p of datos.productos) {
     p.precioFinal = p.precioOrig * (1 - p.descProd / 100) * factor;
@@ -540,12 +580,20 @@ function cargarPantalla2() {
   $("descTxt").textContent = estado.descuento != null ? `${estado.descuento} %` : "no detectado";
   $("bloqueDesc").hidden = estado.descuento != null;
   $("descManual").value = "";
+  $("ganancia").value = "13.5";
   $("avisos").innerHTML = estado.errores.length
     ? `<div class="aviso">${estado.errores.map(esc).join("<br>")}</div>` : "";
   $("err2").textContent = "";
 }
 
 $("btnVolver").addEventListener("click", () => history.back());
+
+$("btnAyuda").addEventListener("click", () => {
+  $("ayuda").hidden = false;
+  history.pushState({ pantalla: "ayuda" }, "");
+});
+$("btnCerrarAyuda").addEventListener("click", () => history.back());
+$("ayuda").addEventListener("click", e => { if (e.target.id === "ayuda") history.back(); });
 
 $("btnGenerar").addEventListener("click", async () => {
   const cliente = $("cliente").value.trim();
@@ -557,9 +605,10 @@ $("btnGenerar").addEventListener("click", async () => {
   }
   if (!cliente) { $("err2").textContent = "Ingresá el nombre del cliente."; return; }
 
+  const ganancia = parseFloat($("ganancia").value) / 100;
   $("err2").textContent = "";
   try {
-    const r = calcular({ ...estado, cliente, descuento });
+    const r = calcular({ ...estado, cliente, descuento, ganancia });
     estado.resultado = r;
 
     let logo = null;

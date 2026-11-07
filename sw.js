@@ -4,7 +4,7 @@
 // (index.html, vendor/*, logo, manifest) subí el número de VERSION.
 // Así los celulares detectan la versión nueva y ofrecen actualizar.
 // ─────────────────────────────────────────────────────────────────────
-const VERSION = "3";
+const VERSION = "4";
 const CACHE = "remitos-jpa-v" + VERSION;
 
 const ARCHIVOS = [
