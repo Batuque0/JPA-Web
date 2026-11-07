@@ -10,30 +10,10 @@
 <link rel="apple-touch-icon" href="logo_jpa.png">
 <title>Remitos JPA</title>
 
-<!-- Manifest inline (data URI). Se arma en JS para resolver bien las URLs de los íconos -->
-<link id="manifest" rel="manifest" href="">
-<script>
-(function () {
-  const base = new URL("./", location.href).href;
-  const manifest = {
-    name: "Remitos JPA",
-    short_name: "Remitos JPA",
-    start_url: base,
-    scope: base,
-    display: "standalone",
-    theme_color: "#1f3b5a",
-    background_color: "#eef1f5",
-    icons: [
-      { src: new URL("logo_jpa.png", location.href).href, sizes: "any", type: "image/png", purpose: "any" }
-    ]
-  };
-  document.getElementById("manifest").href =
-    "data:application/manifest+json;charset=utf-8," + encodeURIComponent(JSON.stringify(manifest));
-})();
-</script>
+<link rel="manifest" href="manifest.webmanifest">
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="vendor/pdf.min.js"></script>
+<script src="vendor/jspdf.umd.min.js"></script>
 
 <style>
   :root { --azul:#1f3b5a; --fondo:#eef1f5; --error:#b00020; }
@@ -53,6 +33,7 @@
   .btn-grande { width:100%; max-width:420px; }
   .oculto { position:absolute; width:1px; height:1px; opacity:0; overflow:hidden; }
   .error { color:var(--error); min-height:1.2em; text-align:center; margin:0; }
+  .estado-offline { color:#2e7d32; font-size:14px; margin:0; text-align:center; }
   h2 { color:var(--azul); margin:8px 0 12px; }
   .tarjeta { background:#fff; border-radius:14px; padding:14px; margin-bottom:12px; }
   .campo { display:block; margin:12px 0; font-weight:600; }
@@ -89,6 +70,11 @@
     <input id="archivo" class="oculto" type="file" accept="application/pdf">
     <p id="cargando" class="error" style="color:#333" hidden>Leyendo remito…</p>
     <p id="err1" class="error"></p>
+    <div id="avisoUpdate" class="aviso" hidden>
+      Hay una versión nueva de la app.
+      <button id="btnActualizar" class="btn btn-sec" style="font-size:15px;padding:8px 14px;margin-left:8px">Actualizar</button>
+    </div>
+    <p id="estadoOffline" class="estado-offline" hidden>✓ Lista para usar sin conexión</p>
   </div>
 </section>
 
@@ -132,7 +118,7 @@
   <div class="puntos"><span class="pt on" id="pt1"></span><span class="pt" id="pt2"></span></div>
   <div class="hint">← Deslizá para ver el original →</div>
   <div class="acciones">
-    <button id="btnEnviar" class="btn btn-grande">Enviar por WhatsApp</button>
+    <button id="btnEnviar" class="btn btn-grande">Compartir</button>
     <button id="btnNuevo" class="btn btn-sec btn-grande">Nuevo</button>
   </div>
 </section>
@@ -144,15 +130,49 @@ const TIPO = "Comprobante";
 const CONDICION = "Contado";
 const $ = id => document.getElementById(id);
 
-pdfjsLib.GlobalWorkerOptions.workerSrc =
-  "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+if (window.pdfjsLib) {
+  pdfjsLib.GlobalWorkerOptions.workerSrc = "vendor/pdf.worker.min.js";
+}
+if (!window.pdfjsLib || !window.jspdf) {
+  $("err1").textContent = "Error: no se cargaron las librerías internas. Abrí la app una vez con conexión.";
+}
 
 let estado = null;
 
 // ── Service Worker (registro) ────────────────────────────────────────
+let actualizando = false;
+function avisarActualizacion(reg) {
+  $("avisoUpdate").hidden = false;
+  $("btnActualizar").onclick = () => {
+    if (!reg.waiting) return;
+    actualizando = true;
+    reg.waiting.postMessage({ type: "SKIP_WAITING" });
+  };
+}
 if ("serviceWorker" in navigator) {
-  window.addEventListener("load", () => {
-    navigator.serviceWorker.register("sw.js").catch(err => console.error("SW:", err));
+  // Recarga solo si el usuario tocó "Actualizar" (evita recargas inesperadas)
+  navigator.serviceWorker.addEventListener("controllerchange", () => {
+    if (actualizando) location.reload();
+  });
+  window.addEventListener("load", async () => {
+    try {
+      const reg = await navigator.serviceWorker.register("sw.js");
+      if (reg.waiting && navigator.serviceWorker.controller) avisarActualizacion(reg);
+      reg.addEventListener("updatefound", () => {
+        const nuevo = reg.installing;
+        if (!nuevo) return;
+        nuevo.addEventListener("statechange", () => {
+          if (nuevo.state === "installed" && navigator.serviceWorker.controller) avisarActualizacion(reg);
+        });
+      });
+      // Buscar versión nueva cada vez que la app vuelve a primer plano
+      document.addEventListener("visibilitychange", () => {
+        if (!document.hidden) reg.update().catch(() => {});
+      });
+      navigator.serviceWorker.ready.then(() => { $("estadoOffline").hidden = false; });
+    } catch (err) {
+      console.error("SW:", err);
+    }
   });
 }
 
@@ -491,21 +511,27 @@ $("btnGenerar").addEventListener("click", async () => {
   if (!cliente) { $("err2").textContent = "Ingresá el nombre del cliente."; return; }
 
   $("err2").textContent = "";
-  const r = calcular({ ...estado, cliente, descuento });
-  estado.resultado = r;
+  try {
+    const r = calcular({ ...estado, cliente, descuento });
+    estado.resultado = r;
 
-  let logo = null;
-  try { logo = await cargarImagen("logo_jpa.png"); } catch (e) { /* sin logo */ }
+    let logo = null;
+    try { logo = await cargarImagen("logo_jpa.png"); } catch (e) { /* sin logo */ }
 
-  r.pdfBlob = await crearPdfRemito(r, logo);
-  const bytesRemito = new Uint8Array(await r.pdfBlob.arrayBuffer());
+    r.pdfBlob = await crearPdfRemito(r, logo);
+    const bytesRemito = new Uint8Array(await r.pdfBlob.arrayBuffer());
 
-  $("tituloS3").textContent = `Remito ${r.numero}`;
-  $("deslizador").scrollLeft = 0;
-  mostrar("s3");
+    $("tituloS3").textContent = `Remito ${r.numero}`;
+    $("deslizador").scrollLeft = 0;
+    mostrar("s3");
 
-  await renderPdfEn(bytesRemito, "visorRemito");
-  renderPdfEn(estado.bytes, "visorOriginal").catch(err => console.error(err));
+    await renderPdfEn(bytesRemito, "visorRemito");
+    renderPdfEn(estado.bytes, "visorOriginal").catch(err => console.error(err));
+  } catch (err) {
+    console.error(err);
+    mostrar("s2");
+    $("err2").textContent = "No se pudo generar el remito: " + err.message;
+  }
 });
 
 $("deslizador").addEventListener("scroll", () => {
@@ -529,11 +555,6 @@ $("btnEnviar").addEventListener("click", async () => {
     alert("Este navegador no permite compartir archivos. Se descargó el PDF.");
   }
 });
-
-$("btnNuevo").addEventListener("click", () => { estado = null; mostrar("s1"); });
-</script>
-</body>
-</html>
 
 $("btnNuevo").addEventListener("click", () => { estado = null; mostrar("s1"); });
 </script>

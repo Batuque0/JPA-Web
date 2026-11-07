@@ -1,0 +1,12 @@
+{
+  "name": "Remitos JPA",
+  "short_name": "Remitos JPA",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "theme_color": "#1f3b5a",
+  "background_color": "#eef1f5",
+  "icons": [
+    { "src": "logo_jpa.png", "sizes": "any", "type": "image/png", "purpose": "any" }
+  ]
+}

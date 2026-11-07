@@ -1,16 +1,61 @@
-const CACHE = "remitos-jpa-v1";
+// ─────────────────────────────────────────────────────────────────────
+// Remitos JPA · Service Worker
+// IMPORTANTE: cada vez que modifiques CUALQUIER archivo de la app
+// (index.html, vendor/*, logo, manifest) subí el número de VERSION.
+// Así los celulares detectan la versión nueva y ofrecen actualizar.
+// ─────────────────────────────────────────────────────────────────────
+const VERSION = "2";
+const CACHE = "remitos-jpa-v" + VERSION;
 
+const ARCHIVOS = [
+  "./",
+  "./index.html",
+  "./manifest.webmanifest",
+  "./logo_jpa.png",
+  "./vendor/pdf.min.js",
+  "./vendor/pdf.worker.min.js",
+  "./vendor/jspdf.umd.min.js"
+];
+
+// Instalación: descarga TODO (saltando la caché HTTP de GitHub Pages).
+// Si algún archivo falla, la instalación se cancela y se reintenta luego,
+// por lo que nunca queda una versión a medias.
 self.addEventListener("install", e => {
-  e.waitUntil(caches.open(CACHE).then(c => c.addAll(["./index.html", "./logo_jpa.png"])));
-  self.skipWaiting();
+  e.waitUntil(
+    caches.open(CACHE).then(c =>
+      c.addAll(ARCHIVOS.map(u => new Request(u, { cache: "reload" })))
+    )
+  );
+  // Sin skipWaiting automático: la versión nueva espera a que el usuario toque "Actualizar".
 });
 
+// Activación: borra versiones viejas y toma el control.
 self.addEventListener("activate", e => {
-  e.waitUntil(self.clients.claim());
+  e.waitUntil(
+    caches.keys()
+      .then(ks => Promise.all(ks.filter(k => k.startsWith("remitos-jpa-") && k !== CACHE).map(k => caches.delete(k))))
+      .then(() => self.clients.claim())
+  );
 });
 
-// Red primero; si no hay conexión, usa la copia guardada
+// El usuario aceptó actualizar desde la app.
+self.addEventListener("message", e => {
+  if (e.data && e.data.type === "SKIP_WAITING") self.skipWaiting();
+});
+
+// Caché primero (todo es local y versionado); red solo si algo no está guardado.
 self.addEventListener("fetch", e => {
-  if (e.request.method !== "GET") return;
-  e.respondWith(fetch(e.request).catch(() => caches.match(e.request)));
+  const req = e.request;
+  if (req.method !== "GET") return;
+  if (new URL(req.url).origin !== self.location.origin) return;
+
+  e.respondWith((async () => {
+    const hit = await caches.match(req, { cacheName: CACHE, ignoreSearch: true });
+    if (hit) return hit;
+    if (req.mode === "navigate") {
+      const index = await caches.match("./index.html", { cacheName: CACHE });
+      if (index) return index;
+    }
+    return fetch(req);
+  })());
 });
