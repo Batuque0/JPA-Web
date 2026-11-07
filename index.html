@@ -34,6 +34,7 @@
   .oculto { position:absolute; width:1px; height:1px; opacity:0; overflow:hidden; }
   .error { color:var(--error); min-height:1.2em; text-align:center; margin:0; }
   .estado-offline { color:#2e7d32; font-size:14px; margin:0; text-align:center; }
+  .version { color:#888; font-size:13px; margin:0; text-align:center; }
   h2 { color:var(--azul); margin:8px 0 12px; }
   .tarjeta { background:#fff; border-radius:14px; padding:14px; margin-bottom:12px; }
   .campo { display:block; margin:12px 0; font-weight:600; }
@@ -75,6 +76,7 @@
       <button id="btnActualizar" class="btn btn-sec" style="font-size:15px;padding:8px 14px;margin-left:8px">Actualizar</button>
     </div>
     <p id="estadoOffline" class="estado-offline" hidden>✓ Lista para usar sin conexión</p>
+    <p id="version" class="version" hidden></p>
   </div>
 </section>
 
@@ -141,6 +143,16 @@ let estado = null;
 
 // ── Service Worker (registro) ────────────────────────────────────────
 let actualizando = false;
+function pedirVersion() {
+  const sw = navigator.serviceWorker && navigator.serviceWorker.controller;
+  if (!sw) return;
+  const canal = new MessageChannel();
+  canal.port1.onmessage = e => {
+    $("version").textContent = "Versión " + e.data;
+    $("version").hidden = false;
+  };
+  sw.postMessage({ type: "GET_VERSION" }, [canal.port2]);
+}
 function avisarActualizacion(reg) {
   $("avisoUpdate").hidden = false;
   $("btnActualizar").onclick = () => {
@@ -152,11 +164,12 @@ function avisarActualizacion(reg) {
 if ("serviceWorker" in navigator) {
   // Recarga solo si el usuario tocó "Actualizar" (evita recargas inesperadas)
   navigator.serviceWorker.addEventListener("controllerchange", () => {
-    if (actualizando) location.reload();
+    if (actualizando) location.reload(); else pedirVersion();
   });
   window.addEventListener("load", async () => {
     try {
       const reg = await navigator.serviceWorker.register("sw.js");
+      pedirVersion();
       if (reg.waiting && navigator.serviceWorker.controller) avisarActualizacion(reg);
       reg.addEventListener("updatefound", () => {
         const nuevo = reg.installing;
@@ -182,6 +195,29 @@ function mostrar(id) {
   document.body.classList.toggle("vista-s3", id === "s3");
   window.scrollTo(0, 0);
 }
+
+// ── Historial: el botón "atrás" de Android vuelve a la pantalla anterior ──
+function irA(id) {
+  mostrar(id);
+  history.pushState({ pantalla: id }, "");
+}
+// Libera la memoria de los canvas de los visores (importante en iPhone)
+function liberarVisores() {
+  ["visorRemito", "visorOriginal"].forEach(id => {
+    const c = $(id);
+    c._turno = (c._turno || 0) + 1;   // cancela cualquier render en curso
+    c.querySelectorAll("canvas").forEach(cv => { cv.width = 0; cv.height = 0; });
+    c.innerHTML = "";
+  });
+}
+history.replaceState({ pantalla: "s1" }, "");
+window.addEventListener("popstate", e => {
+  let id = (e.state && e.state.pantalla) || "s1";
+  // Si la app se recargó y ya no hay datos, no mostrar pantallas vacías
+  if ((id === "s2" && !estado) || (id === "s3" && !(estado && estado.resultado))) id = "s1";
+  mostrar(id);
+  if (id === "s1") liberarVisores();
+});
 const esc = s => String(s).replace(/[&<>"']/g, c =>
   ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 // Formato del ejemplo: $ 2,643.22
@@ -216,22 +252,26 @@ function normalizarNumero(t) {
 async function leerLineas(bytes) {
   const pdf = await pdfjsLib.getDocument({ data: bytes.slice(0) }).promise;
   const lineas = [];
-  for (let n = 1; n <= pdf.numPages; n++) {
-    const page = await pdf.getPage(n);
-    const tc = await page.getTextContent();
-    const filas = [];
-    for (const it of tc.items) {
-      if (!it.str || !it.str.trim()) continue;
-      const y = it.transform[5], x = it.transform[4];
-      let f = filas.find(f => Math.abs(f.y - y) < 2);
-      if (!f) { f = { y, items: [] }; filas.push(f); }
-      f.items.push({ x, s: it.str });
+  try {
+    for (let n = 1; n <= pdf.numPages; n++) {
+      const page = await pdf.getPage(n);
+      const tc = await page.getTextContent();
+      const filas = [];
+      for (const it of tc.items) {
+        if (!it.str || !it.str.trim()) continue;
+        const y = it.transform[5], x = it.transform[4];
+        let f = filas.find(f => Math.abs(f.y - y) < 2);
+        if (!f) { f = { y, items: [] }; filas.push(f); }
+        f.items.push({ x, s: it.str });
+      }
+      filas.sort((a, b) => b.y - a.y);
+      for (const f of filas) {
+        f.items.sort((a, b) => a.x - b.x);
+        lineas.push(f.items.map(i => i.s).join(" ").replace(/\s+/g, " ").trim());
+      }
     }
-    filas.sort((a, b) => b.y - a.y);
-    for (const f of filas) {
-      f.items.sort((a, b) => a.x - b.x);
-      lineas.push(f.items.map(i => i.s).join(" ").replace(/\s+/g, " ").trim());
-    }
+  } finally {
+    pdf.destroy();
   }
   return lineas;
 }
@@ -449,17 +489,24 @@ async function crearPdfRemito(r, logo) {
 // ── Visor de PDF (pdf.js): muestra todas las hojas ───────────────────
 async function renderPdfEn(bytes, contenedorId) {
   const cont = $(contenedorId);
+  const turno = cont._turno = (cont._turno || 0) + 1;   // cancela renders anteriores
   cont.innerHTML = "";
   const pdf = await pdfjsLib.getDocument({ data: bytes.slice(0) }).promise;
   const ancho = $("deslizador").clientWidth - 24;
-  for (let n = 1; n <= pdf.numPages; n++) {
-    const page = await pdf.getPage(n);
-    const vp1 = page.getViewport({ scale: 1 });
-    const vp = page.getViewport({ scale: (ancho * 2) / vp1.width });
-    const canvas = document.createElement("canvas");
-    canvas.width = vp.width; canvas.height = vp.height;
-    cont.appendChild(canvas);
-    await page.render({ canvasContext: canvas.getContext("2d"), viewport: vp }).promise;
+  try {
+    for (let n = 1; n <= pdf.numPages; n++) {
+      const page = await pdf.getPage(n);
+      if (cont._turno !== turno) break;   // otro render o "Nuevo" lo reemplazó
+      const vp1 = page.getViewport({ scale: 1 });
+      const vp = page.getViewport({ scale: (ancho * 2) / vp1.width });
+      const canvas = document.createElement("canvas");
+      canvas.width = vp.width; canvas.height = vp.height;
+      cont.appendChild(canvas);
+      await page.render({ canvasContext: canvas.getContext("2d"), viewport: vp }).promise;
+      page.cleanup();
+    }
+  } finally {
+    pdf.destroy();
   }
 }
 
@@ -477,7 +524,7 @@ $("archivo").addEventListener("change", async e => {
     if (!datos.productos.length) throw new Error("no se encontraron productos en el PDF.");
     estado = { bytes, ...datos };
     cargarPantalla2();
-    mostrar("s2");
+    irA("s2");
   } catch (err) {
     $("err1").textContent = "Error: " + err.message;
   } finally {
@@ -498,7 +545,7 @@ function cargarPantalla2() {
   $("err2").textContent = "";
 }
 
-$("btnVolver").addEventListener("click", () => mostrar("s1"));
+$("btnVolver").addEventListener("click", () => history.back());
 
 $("btnGenerar").addEventListener("click", async () => {
   const cliente = $("cliente").value.trim();
@@ -523,14 +570,14 @@ $("btnGenerar").addEventListener("click", async () => {
 
     $("tituloS3").textContent = `Remito ${r.numero}`;
     $("deslizador").scrollLeft = 0;
-    mostrar("s3");
+    irA("s3");
 
     await renderPdfEn(bytesRemito, "visorRemito");
     renderPdfEn(estado.bytes, "visorOriginal").catch(err => console.error(err));
   } catch (err) {
     console.error(err);
-    mostrar("s2");
     $("err2").textContent = "No se pudo generar el remito: " + err.message;
+    if ($("s3").classList.contains("activa")) history.back(); else mostrar("s2");
   }
 });
 
@@ -556,7 +603,7 @@ $("btnEnviar").addEventListener("click", async () => {
   }
 });
 
-$("btnNuevo").addEventListener("click", () => { estado = null; mostrar("s1"); });
+$("btnNuevo").addEventListener("click", () => { estado = null; history.go(-2); });
 </script>
 </body>
 </html>

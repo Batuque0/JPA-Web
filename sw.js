@@ -4,7 +4,7 @@
 // (index.html, vendor/*, logo, manifest) subí el número de VERSION.
 // Así los celulares detectan la versión nueva y ofrecen actualizar.
 // ─────────────────────────────────────────────────────────────────────
-const VERSION = "2";
+const VERSION = "3";
 const CACHE = "remitos-jpa-v" + VERSION;
 
 const ARCHIVOS = [
@@ -40,7 +40,10 @@ self.addEventListener("activate", e => {
 
 // El usuario aceptó actualizar desde la app.
 self.addEventListener("message", e => {
-  if (e.data && e.data.type === "SKIP_WAITING") self.skipWaiting();
+  if (!e.data) return;
+  if (e.data.type === "SKIP_WAITING") self.skipWaiting();
+  // La app pregunta qué versión está corriendo (se muestra en la pantalla de inicio)
+  if (e.data.type === "GET_VERSION" && e.ports && e.ports[0]) e.ports[0].postMessage(VERSION);
 });
 
 // Caché primero (todo es local y versionado); red solo si algo no está guardado.
