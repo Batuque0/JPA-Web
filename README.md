@@ -6,20 +6,23 @@ Funciona **sin conexión a Internet**, se instala en Android e iOS y no requiere
 
 ## Qué hace
 
-1. Lee un PDF de remito descargado en el celular.
-2. Detecta número de remito, cliente, descuento y productos.
-3. Permite confirmar o cambiar el **cliente**, elegir la **ganancia** (13.5 % o 15 %) y, si el PDF no trae descuento, elegir el porcentaje.
-4. Genera el nuevo remito en PDF y lo muestra junto con el original (deslizando hacia el costado).
-5. Lo comparte con el menú nativo del celular (WhatsApp, Gmail, Telegram, Drive, etc.).
+1. Lee uno o **varios PDF de remito a la vez (hasta 8)** descargados en el celular.
+2. Detecta número de remito, cliente, descuento y productos de cada uno.
+3. Muestra una tarjeta por remito, donde se puede confirmar o cambiar el **cliente**, elegir la **ganancia** (13.5 % o 15 %) y, si el PDF no trae descuento, elegir el porcentaje. Cada remito es independiente.
+4. Genera los nuevos remitos en PDF. Se navega **hacia abajo** para ver el siguiente remito y **hacia el costado** para ver el original.
+5. Los comparte con el menú nativo del celular (WhatsApp, Gmail, Telegram, Drive, etc.): **uno solo** o **todos juntos** en un mismo mensaje.
 
 La pantalla de inicio tiene un botón **?** con una ayuda breve de uso.
 
 ## Cómo se usa
 
 1. Descargá el remito del mail al celular (acordate dónde lo guardás).
-2. Tocá **Cargar remito** y seleccioná el PDF.
-3. Verificá los datos y tocá **Generar remito**.
-4. Tocá **Compartir** y elegí la aplicación.
+2. Tocá **Cargar remitos** y seleccioná los PDF (hasta 8 a la vez).
+3. Verificá los datos de cada remito y tocá **Generar remitos**.
+4. Deslizá hacia abajo para ver el siguiente y hacia el costado para ver el original.
+5. Tocá **Compartir este** o **Compartir todos** y elegí la aplicación.
+
+> **Compartir todos** envía todos los PDF al mismo chat o mail. Si cada remito va a un cliente distinto, usá **Compartir este** con cada uno.
 
 Si no hay señal, se puede hacer todo el proceso igual: el mensaje se envía cuando vuelva la conexión.
 
@@ -66,7 +69,7 @@ Si hace falta recrear la carpeta, guardar estos archivos con estos nombres:
 
 Cada vez que se modifique **cualquier archivo** de la app (`index.html`, `vendor/*`, `logo_jpa.png`, `manifest.webmanifest`):
 
-1. Subir el número de `VERSION` al principio de `sw.js` (por ejemplo, de `"4"` a `"5"`).
+1. Subir el número de `VERSION` al principio de `sw.js` (por ejemplo, de `"5"` a `"6"`).
 2. Subir los cambios a GitHub.
 
 Si se olvida este paso, los celulares seguirán usando la copia guardada y no se enterarán del cambio.
@@ -79,6 +82,7 @@ Al comienzo del script de `index.html`:
 
 ```js
 const GANANCIA = 0.135;            // ganancia por defecto (13.5 %)
+const MAX_REMITOS = 8;             // máximo de remitos por tanda
 const EMPRESA = "DISTRIBUIDORA JPA";
 const TIPO = "Comprobante";
 const CONDICION = "Contado";
@@ -90,10 +94,12 @@ Las opciones de ganancia que se ofrecen en pantalla (13.5 % y 15 %) están en el
 
 - **Service Worker (`sw.js`):** en la primera visita descarga y guarda todos los archivos de la app. Después responde siempre desde esa copia local.
 - **Versiones de caché:** cada versión tiene su propia caché (`remitos-jpa-vN`). Al activar una versión nueva se borran las anteriores.
-- **Datos:** no se guarda nada. El PDF se lee desde el dispositivo, se procesa en memoria y no se envía a ningún servidor.
+- **Datos:** no se guarda nada. Los PDF se leen desde el dispositivo, se procesan en memoria y no se envían a ningún servidor.
+- **Memoria:** con varios remitos, solo se dibujan en pantalla el que se está viendo y sus vecinos; el resto se libera, para no saturar el celular.
 
 ## Compatibilidad y límites conocidos
 
+- **Compartir varios archivos a la vez** funciona en Android (Chrome) e iOS 15 o posterior. Si un dispositivo no lo permite, la app avisa y se puede compartir de a uno.
 - **Compartir archivos** usa la Web Share API. Está soportada en Chrome para Android y en Safari de iOS 15 o posterior, incluyendo la app instalada. En navegadores que no la soportan (por ejemplo, algunas computadoras), el PDF se descarga.
 - **iPhone:** la app instalada guarda sus archivos aparte de Safari, por eso hay que abrirla una vez con Internet desde el ícono. El ícono y el nombre no se actualizan solos: para cambiarlos hay que reinstalar.
 - **Botón atrás de Android:** vuelve a la pantalla anterior; desde la pantalla de inicio cierra la app.

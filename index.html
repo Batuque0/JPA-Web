@@ -60,7 +60,8 @@
 
   /* ── Pantalla 3: ocupa todo el alto disponible ── */
   #s3 { height:100vh; height:100dvh; min-height:0; padding:0; overflow:hidden; }
-  .barra { flex-shrink:0; background:var(--azul); color:#fff; padding:14px 16px; font-size:18px; font-weight:600; }
+  .barra { flex-shrink:0; background:var(--azul); color:#fff; padding:14px 16px; font-size:18px; font-weight:600;
+           display:flex; justify-content:space-between; gap:12px; }
   .deslizador { flex:1 1 auto; min-height:0; display:flex; overflow-x:auto; overflow-y:hidden;
                 scroll-snap-type:x mandatory; -webkit-overflow-scrolling:touch; }
   .panel { flex:0 0 100%; width:100%; height:100%; min-height:0; overflow-y:auto; scroll-snap-align:start;
@@ -74,6 +75,19 @@
   .hint { flex-shrink:0; text-align:center; font-size:14px; color:#555; margin:2px 0 6px; }
   .acciones { flex-shrink:0; display:flex; flex-direction:column; gap:10px; padding:12px 16px;
               padding-bottom:max(12px, env(safe-area-inset-bottom)); background:#fff; align-items:center; }
+
+  /* ── Varios remitos ── */
+  [hidden] { display:none !important; }
+  #err1 { white-space:pre-line; }
+  .tarjeta-cab { display:flex; justify-content:space-between; gap:10px; color:var(--azul); margin-bottom:6px; }
+  .tarjeta.invalida { outline:2px solid var(--error); }
+  .err-card { min-height:0; }
+  .btn-col.fijo .error:empty { display:none; }
+  .btn-col.fijo { position:sticky; bottom:0; background:var(--fondo); padding:8px 0 max(8px, env(safe-area-inset-bottom)); }
+  .lista { flex:1 1 auto; min-height:0; overflow-y:auto; scroll-snap-type:y mandatory; -webkit-overflow-scrolling:touch; }
+  .item { height:100%; display:flex; flex-direction:column; scroll-snap-align:start; scroll-snap-stop:always; }
+  .fila { display:flex; gap:10px; width:100%; max-width:420px; }
+  .fila .btn { flex:1; font-size:16px; padding:12px 8px; }
 </style>
 </head>
 <body>
@@ -83,8 +97,8 @@
   <button id="btnAyuda" class="btn-ayuda" aria-label="Ayuda">?</button>
   <div class="centro">
     <img class="logo" src="logo_jpa.png" alt="JPA">
-    <label class="btn btn-grande" for="archivo">Cargar remito</label>
-    <input id="archivo" class="oculto" type="file" accept="application/pdf">
+    <label class="btn btn-grande" for="archivo">Cargar remitos</label>
+    <input id="archivo" class="oculto" type="file" accept="application/pdf" multiple>
     <p id="cargando" class="error" style="color:#333" hidden>Leyendo remito…</p>
     <p id="err1" class="error"></p>
     <div id="avisoUpdate" class="aviso" hidden>
@@ -96,53 +110,28 @@
   </div>
 </section>
 
-<!-- PANTALLA 2: confirmar cliente y descuento -->
+<!-- PANTALLA 2: confirmar cliente, ganancia y descuento de cada remito -->
 <section id="s2" class="pantalla">
-  <h2>Confirmar datos</h2>
-  <div class="tarjeta">
-    <div>Remito: <b id="nroRemito"></b></div>
-    <div>Productos: <b id="cantProd"></b></div>
-    <div>Descuento del PDF: <b id="descTxt"></b></div>
-  </div>
-  <label class="campo">Cliente (podés cambiarlo)
-    <input id="cliente" type="text" autocomplete="off">
-  </label>
-  <label class="campo">Ganancia
-    <select id="ganancia">
-      <option value="13.5">13.5 %</option>
-      <option value="15">15 %</option>
-    </select>
-  </label>
-  <div id="bloqueDesc" class="tarjeta" hidden>
-    <div class="aviso">No se encontró el descuento en el PDF. Elegí el porcentaje:</div>
-    <label class="campo">Descuento
-      <select id="descManual">
-        <option value="">Elegir…</option>
-        <option value="0">0 %</option>
-        <option value="10">10 %</option>
-        <option value="20">20 %</option>
-      </select>
-    </label>
-  </div>
-  <div id="avisos"></div>
-  <p id="err2" class="error"></p>
-  <div class="btn-col">
+  <h2 id="tituloS2">Confirmar datos</h2>
+  <div id="avisoLote"></div>
+  <div id="listaS2"></div>
+  <div class="btn-col fijo">
+    <p id="progreso" class="error" style="color:#333"></p>
+    <p id="err2" class="error"></p>
     <button id="btnGenerar" class="btn btn-grande">Generar remito</button>
     <button id="btnVolver" class="btn btn-sec btn-grande">Volver</button>
   </div>
 </section>
 
-<!-- PANTALLA 3: remito generado (PDF) + original deslizable -->
+<!-- PANTALLA 3: un remito por pantalla (hacia abajo: siguiente; al costado: original) -->
 <section id="s3" class="pantalla">
-  <div class="barra" id="tituloS3">Remito</div>
-  <div class="deslizador" id="deslizador">
-    <div class="panel"><div class="visor" id="visorRemito"></div></div>
-    <div class="panel"><div class="visor" id="visorOriginal"></div></div>
-  </div>
-  <div class="puntos"><span class="pt on" id="pt1"></span><span class="pt" id="pt2"></span></div>
-  <div class="hint">← Deslizá para ver el original →</div>
+  <div class="barra"><span id="tituloS3">Remito</span><span id="posS3"></span></div>
+  <div class="lista" id="listaS3"></div>
   <div class="acciones">
-    <button id="btnEnviar" class="btn btn-grande">Compartir</button>
+    <div class="fila">
+      <button id="btnEnviar" class="btn">Compartir</button>
+      <button id="btnEnviarTodos" class="btn" hidden>Compartir todos</button>
+    </div>
     <button id="btnNuevo" class="btn btn-sec btn-grande">Nuevo</button>
   </div>
 </section>
@@ -153,9 +142,9 @@
     <h2 id="ayudaTitulo">¿Cómo se usa?</h2>
     <ol>
       <li>Descargá el remito de tu mail al celular (acordate dónde lo guardás).</li>
-      <li>Tocá <b>Cargar remito</b> y seleccioná el PDF que descargaste.</li>
-      <li>Verificá los datos (cliente, descuento y ganancia) y tocá <b>Generar remito</b>.</li>
-      <li>Tocá <b>Compartir</b> y elegí WhatsApp, Gmail u otra app para enviarlo.</li>
+      <li>Tocá <b>Cargar remitos</b> y seleccioná los PDF que descargaste (hasta 8 a la vez).</li>
+      <li>Verificá los datos de cada remito (cliente, descuento y ganancia) y tocá <b>Generar remito</b>.</li>
+      <li>Deslizá hacia abajo para ver el siguiente remito y hacia el costado para ver el original. Tocá <b>Compartir</b> (o <b>Compartir todos</b>) y elegí WhatsApp, Gmail u otra app.</li>
     </ol>
     <p class="nota">La app funciona sin conexión: si no hay señal, el mensaje se envía cuando vuelva.</p>
     <button id="btnCerrarAyuda" class="btn btn-grande">Entendido</button>
@@ -167,6 +156,7 @@ const GANANCIA = 0.135;
 const EMPRESA = "DISTRIBUIDORA JPA";
 const TIPO = "Comprobante";
 const CONDICION = "Contado";
+const MAX_REMITOS = 8;   // máximo de remitos por tanda
 const $ = id => document.getElementById(id);
 
 if (window.pdfjsLib) {
@@ -176,7 +166,8 @@ if (!window.pdfjsLib || !window.jspdf) {
   $("err1").textContent = "Error: no se cargaron las librerías internas. Abrí la app una vez con conexión.";
 }
 
-let estado = null;
+let lote = [];          // remitos cargados (uno por PDF)
+let avisosLote = [];    // avisos de la carga (PDFs que no se pudieron leer, etc.)
 
 // ── Service Worker (registro) ────────────────────────────────────────
 let actualizando = false;
@@ -238,14 +229,15 @@ function irA(id) {
   mostrar(id);
   history.pushState({ pantalla: id }, "");
 }
-// Libera la memoria de los canvas de los visores (importante en iPhone)
+// Libera la memoria de los canvas (importante en iPhone)
+function liberarContenedor(c) {
+  c._turno = (c._turno || 0) + 1;   // cancela cualquier render en curso
+  c.querySelectorAll("canvas").forEach(cv => { cv.width = 0; cv.height = 0; });
+  c.innerHTML = "";
+}
 function liberarVisores() {
-  ["visorRemito", "visorOriginal"].forEach(id => {
-    const c = $(id);
-    c._turno = (c._turno || 0) + 1;   // cancela cualquier render en curso
-    c.querySelectorAll("canvas").forEach(cv => { cv.width = 0; cv.height = 0; });
-    c.innerHTML = "";
-  });
+  document.querySelectorAll("#listaS3 .visor").forEach(liberarContenedor);
+  $("listaS3").innerHTML = "";
 }
 history.replaceState({ pantalla: "s1" }, "");
 window.addEventListener("popstate", e => {
@@ -253,7 +245,7 @@ window.addEventListener("popstate", e => {
   let id = (e.state && e.state.pantalla) || "s1";
   if (id === "ayuda") id = "s1";
   // Si la app se recargó y ya no hay datos, no mostrar pantallas vacías
-  if ((id === "s2" && !estado) || (id === "s3" && !(estado && estado.resultado))) id = "s1";
+  if ((id === "s2" && !lote.length) || (id === "s3" && !(lote.length && lote.every(r => r.resultado)))) id = "s1";
   mostrar(id);
   if (id === "s1") liberarVisores();
 });
@@ -527,12 +519,12 @@ async function crearPdfRemito(r, logo) {
 }
 
 // ── Visor de PDF (pdf.js): muestra todas las hojas ───────────────────
-async function renderPdfEn(bytes, contenedorId) {
-  const cont = $(contenedorId);
+async function renderPdfEn(bytes, contenedor) {
+  const cont = typeof contenedor === "string" ? $(contenedor) : contenedor;
   const turno = cont._turno = (cont._turno || 0) + 1;   // cancela renders anteriores
   cont.innerHTML = "";
   const pdf = await pdfjsLib.getDocument({ data: bytes.slice(0) }).promise;
-  const ancho = $("deslizador").clientWidth - 24;
+  const ancho = (cont.parentElement.clientWidth || window.innerWidth) - 24;
   try {
     for (let n = 1; n <= pdf.numPages; n++) {
       const page = await pdf.getPage(n);
@@ -552,38 +544,88 @@ async function renderPdfEn(bytes, contenedorId) {
 
 // ── Flujo ────────────────────────────────────────────────────────────
 $("archivo").addEventListener("change", async e => {
-  const file = e.target.files[0];
-  if (!file) return;
+  let files = Array.from(e.target.files || []);
+  if (!files.length) return;
+  const sobran = Math.max(0, files.length - MAX_REMITOS);
+  files = files.slice(0, MAX_REMITOS);
+  const varios = files.length > 1;
   $("err1").textContent = "";
   $("cargando").hidden = false;
+  const nuevos = [], fallos = [];
   try {
-    const bytes = new Uint8Array(await file.arrayBuffer());
-    const lineas = await leerLineas(bytes);
-    const datos = parsearPdf(lineas);
-    if (!datos.numero) throw new Error("no se encontró el número de remito. ¿Es el PDF correcto?");
-    if (!datos.productos.length) throw new Error("no se encontraron productos en el PDF.");
-    estado = { bytes, ...datos };
-    cargarPantalla2();
-    irA("s2");
-  } catch (err) {
-    $("err1").textContent = "Error: " + err.message;
+    for (let i = 0; i < files.length; i++) {
+      $("cargando").textContent = varios ? `Leyendo remito ${i + 1} de ${files.length}…` : "Leyendo remito…";
+      try {
+        const bytes = new Uint8Array(await files[i].arrayBuffer());
+        const lineas = await leerLineas(bytes);
+        const datos = parsearPdf(lineas);
+        if (!datos.numero) throw new Error("no se encontró el número de remito. ¿Es el PDF correcto?");
+        if (!datos.productos.length) throw new Error("no se encontraron productos en el PDF.");
+        nuevos.push({ bytes, ...datos });
+      } catch (err) {
+        fallos.push(varios ? `${files[i].name}: ${err.message}` : err.message);
+      }
+    }
   } finally {
     $("cargando").hidden = true;
     e.target.value = "";
   }
+  if (!nuevos.length) {
+    $("err1").textContent = varios ? "No se pudo leer ningún remito:\n" + fallos.join("\n") : "Error: " + fallos[0];
+    return;
+  }
+  const vistos = new Set();
+  nuevos.forEach(r => { r.duplicado = vistos.has(r.numero); vistos.add(r.numero); });
+  lote = nuevos;
+  avisosLote = fallos.map(f => "No se pudo leer " + f);
+  if (sobran) avisosLote.push(`Se cargaron los primeros ${MAX_REMITOS} remitos (máximo por vez). Quedaron ${sobran} sin cargar.`);
+  cargarPantalla2();
+  irA("s2");
 });
 
+function crearTarjeta(r, i) {
+  const t = document.createElement("div");
+  t.className = "tarjeta";
+  const avisos = r.errores.map(esc);
+  if (r.duplicado) avisos.push("Hay otro remito con este mismo número en la lista.");
+  t.innerHTML = `
+    <div class="tarjeta-cab"><b>Remito: ${esc(r.numero)}</b>${lote.length > 1 ? `<span>${i + 1} de ${lote.length}</span>` : ""}</div>
+    <div>Productos: <b>${r.productos.length}</b></div>
+    <div>Descuento del PDF: <b>${r.descuento != null ? esc(r.descuento) + " %" : "no detectado"}</b></div>
+    <label class="campo">Cliente (podés cambiarlo)
+      <input class="f-cliente" type="text" autocomplete="off">
+    </label>
+    <label class="campo">Ganancia
+      <select class="f-ganancia">
+        <option value="13.5">13.5 %</option>
+        <option value="15">15 %</option>
+      </select>
+    </label>
+    ${r.descuento == null ? `
+    <div class="aviso">No se encontró el descuento en el PDF. Elegí el porcentaje:</div>
+    <label class="campo">Descuento
+      <select class="f-desc">
+        <option value="">Elegir…</option>
+        <option value="0">0 %</option>
+        <option value="10">10 %</option>
+        <option value="20">20 %</option>
+      </select>
+    </label>` : ""}
+    ${avisos.length ? `<div class="aviso">${avisos.join("<br>")}</div>` : ""}
+    <p class="error err-card"></p>`;
+  t.querySelector(".f-cliente").value = r.cliente || "";
+  return t;
+}
+
 function cargarPantalla2() {
-  $("nroRemito").textContent = estado.numero;
-  $("cantProd").textContent = estado.productos.length;
-  $("cliente").value = estado.cliente || "";
-  $("descTxt").textContent = estado.descuento != null ? `${estado.descuento} %` : "no detectado";
-  $("bloqueDesc").hidden = estado.descuento != null;
-  $("descManual").value = "";
-  $("ganancia").value = "13.5";
-  $("avisos").innerHTML = estado.errores.length
-    ? `<div class="aviso">${estado.errores.map(esc).join("<br>")}</div>` : "";
+  $("tituloS2").textContent = lote.length > 1 ? `Confirmar datos (${lote.length} remitos)` : "Confirmar datos";
+  $("btnGenerar").textContent = lote.length > 1 ? "Generar remitos" : "Generar remito";
+  $("avisoLote").innerHTML = avisosLote.map(a => `<div class="aviso">${esc(a)}</div>`).join("");
+  const cont = $("listaS2");
+  cont.innerHTML = "";
+  lote.forEach((r, i) => cont.appendChild(crearTarjeta(r, i)));
   $("err2").textContent = "";
+  $("progreso").textContent = "";
 }
 
 $("btnVolver").addEventListener("click", () => history.back());
@@ -596,63 +638,178 @@ $("btnCerrarAyuda").addEventListener("click", () => history.back());
 $("ayuda").addEventListener("click", e => { if (e.target.id === "ayuda") history.back(); });
 
 $("btnGenerar").addEventListener("click", async () => {
-  const cliente = $("cliente").value.trim();
-  let descuento = estado.descuento;
-  if (descuento == null) {
-    const v = $("descManual").value;
-    if (v === "") { $("err2").textContent = "Elegí el porcentaje de descuento."; return; }
-    descuento = parseFloat(v);
+  const tarjetas = $("listaS2").querySelectorAll(".tarjeta");
+
+  // 1) Leer y validar cada tarjeta
+  const params = [];
+  let primera = null, msgUnico = "";
+  lote.forEach((r, i) => {
+    const t = tarjetas[i];
+    const cliente = t.querySelector(".f-cliente").value.trim();
+    let descuento = r.descuento, err = "";
+    if (descuento == null) {
+      const v = t.querySelector(".f-desc").value;
+      if (v === "") err = "Elegí el porcentaje de descuento.";
+      else descuento = parseFloat(v);
+    }
+    if (!err && !cliente) err = "Ingresá el nombre del cliente.";
+    const ganancia = parseFloat(t.querySelector(".f-ganancia").value) / 100;
+    t.classList.toggle("invalida", !!err);
+    t.querySelector(".err-card").textContent = lote.length > 1 ? err : "";
+    if (err && !primera) { primera = t; msgUnico = err; }
+    params.push({ cliente, descuento, ganancia });
+  });
+  if (primera) {
+    $("err2").textContent = lote.length === 1 ? msgUnico : "Completá los datos de las tarjetas marcadas en rojo.";
+    primera.scrollIntoView({ behavior: "smooth", block: "center" });
+    return;
   }
-  if (!cliente) { $("err2").textContent = "Ingresá el nombre del cliente."; return; }
 
-  const ganancia = parseFloat($("ganancia").value) / 100;
+  // 2) Generar de a uno (si uno falla, los demás igual se generan)
   $("err2").textContent = "";
+  $("btnGenerar").disabled = true;
   try {
-    const r = calcular({ ...estado, cliente, descuento, ganancia });
-    estado.resultado = r;
-
     let logo = null;
     try { logo = await cargarImagen("logo_jpa.png"); } catch (e) { /* sin logo */ }
 
-    r.pdfBlob = await crearPdfRemito(r, logo);
-    const bytesRemito = new Uint8Array(await r.pdfBlob.arrayBuffer());
+    const usados = {};
+    const fallos = [];
+    for (let i = 0; i < lote.length; i++) {
+      const r = lote[i], t = tarjetas[i];
+      $("progreso").textContent = lote.length > 1 ? `Generando remito ${i + 1} de ${lote.length}…` : "";
+      r.resultado = null;
+      try {
+        const res = calcular({ bytes: r.bytes, numero: r.numero, productos: r.productos, errores: r.errores, ...params[i] });
+        r.resultado = res;
+        res.pdfBlob = await crearPdfRemito(res, logo);
+        r.pdfBlob = res.pdfBlob;
+        r.bytesRemito = new Uint8Array(await res.pdfBlob.arrayBuffer());
+        const n = usados[r.numero] = (usados[r.numero] || 0) + 1;
+        r.nombre = `Remito_${r.numero}${n > 1 ? "_" + n : ""}.pdf`;
+      } catch (err) {
+        console.error(err);
+        r.resultado = null;
+        fallos.push(err.message);
+        t.classList.add("invalida");
+        if (lote.length > 1) t.querySelector(".err-card").textContent = "No se pudo generar el remito: " + err.message;
+      }
+    }
+    $("progreso").textContent = "";
+    if (fallos.length) {
+      $("err2").textContent = lote.length === 1
+        ? "No se pudo generar el remito: " + fallos[0]
+        : `No se pudieron generar ${fallos.length} de ${lote.length} remitos. Revisá las tarjetas marcadas en rojo.`;
+      return;
+    }
 
-    $("tituloS3").textContent = `Remito ${r.numero}`;
-    $("deslizador").scrollLeft = 0;
+    // 3) Mostrar resultado
+    construirS3();
     irA("s3");
-
-    await renderPdfEn(bytesRemito, "visorRemito");
-    renderPdfEn(estado.bytes, "visorOriginal").catch(err => console.error(err));
+    $("listaS3").scrollTop = 0;
+    actualizarVisores(0);
   } catch (err) {
     console.error(err);
+    $("progreso").textContent = "";
     $("err2").textContent = "No se pudo generar el remito: " + err.message;
     if ($("s3").classList.contains("activa")) history.back(); else mostrar("s2");
+  } finally {
+    $("btnGenerar").disabled = false;
   }
 });
 
-$("deslizador").addEventListener("scroll", () => {
-  const d = $("deslizador");
-  const i = Math.round(d.scrollLeft / d.clientWidth);
-  $("pt1").classList.toggle("on", i === 0);
-  $("pt2").classList.toggle("on", i === 1);
+// ── Pantalla 3: un remito por "página" ───────────────────────────────
+// Hacia abajo: siguiente remito. Hacia el costado: el PDF original.
+// Solo se dibujan los remitos cercanos al que se está viendo (ahorra memoria).
+function construirS3() {
+  liberarVisores();
+  const lista = $("listaS3");
+  lote.forEach((r, i) => {
+    const it = document.createElement("div");
+    it.className = "item";
+    const hayMas = i < lote.length - 1;
+    it.innerHTML = `
+      <div class="deslizador">
+        <div class="panel"><div class="visor"></div></div>
+        <div class="panel"><div class="visor"></div></div>
+      </div>
+      <div class="puntos"><span class="pt on"></span><span class="pt"></span></div>
+      <div class="hint">${hayMas ? "← Original →  ·  ↓ Siguiente remito" : "← Deslizá para ver el original →"}</div>`;
+    const desl = it.querySelector(".deslizador");
+    const visores = it.querySelectorAll(".visor");
+    const pts = it.querySelectorAll(".pt");
+    r.vis = { desl, remito: visores[0], original: visores[1], dib: { remito: false, original: false } };
+    desl.addEventListener("scroll", () => {
+      const k = Math.round(desl.scrollLeft / (desl.clientWidth || 1));
+      pts[0].classList.toggle("on", k === 0);
+      pts[1].classList.toggle("on", k === 1);
+      actualizarVisores(indiceActual());
+    });
+    lista.appendChild(it);
+  });
+  $("btnEnviar").textContent = lote.length > 1 ? "Compartir este" : "Compartir";
+  $("btnEnviarTodos").textContent = `Compartir todos (${lote.length})`;
+  $("btnEnviarTodos").hidden = lote.length < 2;
+}
+
+function indiceActual() {
+  const l = $("listaS3");
+  const i = Math.round(l.scrollTop / (l.clientHeight || 1));
+  return Math.min(Math.max(i, 0), lote.length - 1);
+}
+
+function mantener(r, tipo, quiere) {
+  const v = r.vis, d = v.dib;
+  if (quiere && !d[tipo]) {
+    d[tipo] = true;
+    renderPdfEn(tipo === "remito" ? r.bytesRemito : r.bytes, v[tipo]).catch(err => console.error(err));
+  } else if (!quiere && d[tipo]) {
+    d[tipo] = false;
+    liberarContenedor(v[tipo]);
+  }
+}
+
+function actualizarVisores(i) {
+  if (!lote.length || !lote.every(r => r.vis)) return;
+  $("tituloS3").textContent = `Remito ${lote[i].numero}`;
+  $("posS3").textContent = lote.length > 1 ? `${i + 1} de ${lote.length}` : "";
+  lote.forEach((r, k) => {
+    const cerca = Math.abs(k - i) <= 1;
+    // El original se dibuja la primera vez que se desliza hacia él
+    const quiereOrig = cerca && (r.vis.dib.original || (k === i && r.vis.desl.scrollLeft > 8));
+    mantener(r, "remito", cerca);
+    mantener(r, "original", quiereOrig);
+  });
+}
+
+let rafPend = false;
+$("listaS3").addEventListener("scroll", () => {
+  if (rafPend) return;
+  rafPend = true;
+  requestAnimationFrame(() => { rafPend = false; actualizarVisores(indiceActual()); });
 });
 
-$("btnEnviar").addEventListener("click", async () => {
-  const r = estado.resultado;
-  const file = new File([r.pdfBlob], `Remito_${r.numero}.pdf`, { type: "application/pdf" });
-  if (navigator.canShare && navigator.canShare({ files: [file] })) {
+// ── Compartir ────────────────────────────────────────────────────────
+// Importante: navigator.share debe llamarse directo desde el toque (sin esperas antes).
+async function compartir(items) {
+  const files = items.map(r => new File([r.pdfBlob], r.nombre, { type: "application/pdf" }));
+  const titulo = items.length === 1 ? `Remito ${items[0].numero}` : `${items.length} remitos`;
+  if (navigator.canShare && navigator.canShare({ files })) {
     try {
-      await navigator.share({ files: [file], title: `Remito ${r.numero}` });
+      await navigator.share({ files, title: titulo });
     } catch (e) {
       if (e.name !== "AbortError") alert("No se pudo compartir: " + e.message);
     }
+  } else if (items.length > 1 && navigator.canShare && navigator.canShare({ files: [files[0]] })) {
+    alert("Este dispositivo no permite compartir varios archivos a la vez. Usá \"Compartir este\" con cada remito.");
   } else {
-    descargar(r.pdfBlob, file.name);
+    items.forEach((r, k) => setTimeout(() => descargar(r.pdfBlob, files[k].name), k * 400));
     alert("Este navegador no permite compartir archivos. Se descargó el PDF.");
   }
-});
+}
+$("btnEnviar").addEventListener("click", () => compartir([lote[indiceActual()]]));
+$("btnEnviarTodos").addEventListener("click", () => compartir(lote));
 
-$("btnNuevo").addEventListener("click", () => { estado = null; history.go(-2); });
+$("btnNuevo").addEventListener("click", () => { lote = []; avisosLote = []; history.go(-2); });
 </script>
 </body>
 </html>
